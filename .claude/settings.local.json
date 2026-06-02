@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(Start-Sleep -Seconds 20)",
+      "Bash(Get-Content \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Usuario-Desktop-ARMAR-IA\\\\89135b1b-ce5a-4275-8942-01197743c65c\\\\tasks\\\\b2htaftyv.output\")"
+    ]
+  }
+}
