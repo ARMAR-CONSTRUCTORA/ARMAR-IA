@@ -11,7 +11,8 @@ import EquipoPage from './components/EquipoPage'
 import DocumentosPage from './components/DocumentosPage'
 import { sampleProjects } from './data/sampleData'
 
-const STORAGE_KEY = 'armar-ia-projects'
+const STORAGE_KEY  = 'armar-ia-projects'
+const CRON_KEY     = 'armar-ia-cronogramas'
 
 const PAGE_TITLES = {
   dashboard:     'Dashboard',
@@ -34,6 +35,24 @@ function App() {
     }
   })
 
+  const [cronogramas, setCronogramas] = useState(() => {
+    try {
+      const saved = localStorage.getItem(CRON_KEY)
+      if (!saved) return {}
+      const data = JSON.parse(saved)
+      // Migración: si algún valor es objeto plano (formato viejo) lo envuelve en array
+      const migrated = {}
+      for (const [key, val] of Object.entries(data)) {
+        if (Array.isArray(val)) {
+          migrated[key] = val
+        } else if (val && typeof val === 'object' && val.tareas) {
+          migrated[key] = [{ ...val, id: val.id || `cron-${key}-0`, nombre: val.nombre || 'Cronograma' }]
+        }
+      }
+      return migrated
+    } catch { return {} }
+  })
+
   const [activePage, setActivePage]   = useState('dashboard')
   const [menuOpen, setMenuOpen]       = useState(false)
   const [modalOpen, setModalOpen]     = useState(false)
@@ -43,6 +62,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
   }, [projects])
+
+  useEffect(() => {
+    localStorage.setItem(CRON_KEY, JSON.stringify(cronogramas))
+  }, [cronogramas])
 
   // Close drawer when resizing to desktop
   useEffect(() => { if (isDesktop) setMenuOpen(false) }, [isDesktop])
@@ -74,12 +97,95 @@ function App() {
     setDeleteTarget(null)
   }
 
+  const handleCreateCronograma = (projectId, data) => {
+    const id = `cron-${projectId}-${Date.now()}`
+    setCronogramas(prev => ({
+      ...prev,
+      [projectId]: [...(prev[projectId] || []), { ...data, id }],
+    }))
+  }
+
+  const handleDeleteCronograma = (projectId, cronId) => {
+    setCronogramas(prev => ({
+      ...prev,
+      [projectId]: (prev[projectId] || []).filter(c => c.id !== cronId),
+    }))
+  }
+
+  const handleSaveCronograma = (projectId, cronId, updates) => {
+    setCronogramas(prev => ({
+      ...prev,
+      [projectId]: (prev[projectId] || []).map(c =>
+        c.id === cronId ? { ...c, ...updates } : c
+      ),
+    }))
+  }
+
+  const handleCargarAvance = (projectId, cronId, informe, tareasActualizadas) => {
+    setCronogramas(prev => ({
+      ...prev,
+      [projectId]: (prev[projectId] || []).map(c => {
+        if (c.id !== cronId) return c
+        return {
+          ...c,
+          tareas: tareasActualizadas,
+          informes: [...(c.informes || []), informe],
+        }
+      }),
+    }))
+    const totalPeso = tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + (t.pesoRelativo || 1), 0)
+    const nuevoAvance = Math.round(
+      tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
+    )
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
+  }
+
+  const handleEditarInforme = (projectId, cronId, informeId, updatedInforme, tareasActualizadas) => {
+    setCronogramas(prev => ({
+      ...prev,
+      [projectId]: (prev[projectId] || []).map(c => {
+        if (c.id !== cronId) return c
+        return {
+          ...c,
+          tareas: tareasActualizadas,
+          informes: (c.informes || []).map(inf => inf.id === informeId ? updatedInforme : inf),
+        }
+      }),
+    }))
+    const totalPeso = tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + (t.pesoRelativo || 1), 0)
+    const nuevoAvance = Math.round(
+      tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
+    )
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
+  }
+
+  const handleUpdateTasks = (projectId, updatedTasks) => {
+    const avg = updatedTasks.length
+      ? Math.round(updatedTasks.reduce((s, t) => s + t.progress, 0) / updatedTasks.length)
+      : 0
+    setProjects(prev => prev.map(p =>
+      p.id === projectId ? { ...p, tasks: updatedTasks, progress: avg } : p
+    ))
+  }
+
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} />
       case 'obras':
-        return <ProjectList projects={projects} onAdd={openAdd} onEdit={openEdit} onDelete={setDeleteTarget} />
+        return <ProjectList
+          projects={projects}
+          cronogramas={cronogramas}
+          onAdd={openAdd}
+          onEdit={openEdit}
+          onDelete={setDeleteTarget}
+          onUpdateTasks={handleUpdateTasks}
+          onCreateCronograma={handleCreateCronograma}
+          onSaveCronograma={handleSaveCronograma}
+          onCargarAvance={handleCargarAvance}
+          onDeleteCronograma={handleDeleteCronograma}
+          onEditarInforme={handleEditarInforme}
+        />
       case 'cronogramas':
         return <CronogramasPage projects={projects} />
       case 'equipo':

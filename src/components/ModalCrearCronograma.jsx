@@ -1,0 +1,605 @@
+import { useState, useMemo } from 'react'
+import { CRONOGRAMA_TEMPLATES, generarTareasDesdeTemplate } from '../data/cronogramaTemplates'
+import { sampleTeam } from '../data/sampleData'
+import { calcDuracionHabil, calcFechaFin, addBusinessDays, computeCascade } from '../utils/calendarUtils'
+import ModalEditarEtapa from './ModalEditarEtapa'
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtDate(d) {
+  if (!d) return '—'
+  return new Date(d + 'T00:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+function fmtShort(d) {
+  if (!d) return '—'
+  return new Date(d + 'T00:00:00').toLocaleDateString('es-CL', { day: '2-digit', month: 'short' })
+}
+function diffCalDias(a, b) {
+  if (!a || !b) return 0
+  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000)
+}
+
+const STEP_LABELS = ['Tipo de cronograma', 'Parámetros', 'Vista previa']
+
+// ── Indicador de pasos ────────────────────────────────────────────────────────
+function StepBar({ step }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 28 }}>
+      {STEP_LABELS.map((label, i) => {
+        const num = i + 1
+        const active = step === num
+        const done   = step > num
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', flex: i < 2 ? 1 : 0 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                fontWeight: 800, fontSize: 13,
+                background: done ? '#10B981' : active ? 'var(--orange)' : '#E5E7EB',
+                color: done || active ? 'white' : 'var(--gray-500)',
+                transition: 'background 0.2s',
+              }}>
+                {done ? '✓' : num}
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 600, color: active ? 'var(--orange)' : done ? '#10B981' : 'var(--gray-400)', whiteSpace: 'nowrap' }}>
+                {label}
+              </span>
+            </div>
+            {i < 2 && (
+              <div style={{ flex: 1, height: 2, background: done ? '#10B981' : '#E5E7EB', margin: '0 8px', marginBottom: 18, transition: 'background 0.2s' }} />
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// ── Paso 1: Tipo ──────────────────────────────────────────────────────────────
+function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, setNombre }) {
+  const inputStyle = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--gray-200)', fontSize: 14,
+    color: 'var(--gray-800)', fontFamily: 'inherit',
+    background: 'white', boxSizing: 'border-box',
+    fontWeight: 600,
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 24 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Campo nombre — obligatorio */}
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6 }}>
+            Nombre del cronograma *
+          </label>
+          <input
+            style={inputStyle}
+            placeholder='Ej: "Cronograma general", "Versión 2", "Estructura"…'
+            value={nombre}
+            autoFocus
+            onChange={e => setNombre(e.target.value)}
+          />
+          {!nombre.trim() && (
+            <div style={{ fontSize: 10, color: '#F97316', marginTop: 3 }}>Campo obligatorio para continuar</div>
+          )}
+        </div>
+
+        <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 12 }}>
+          ¿Cómo querés crear el cronograma?
+        </p>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+          {['template', 'scratch'].map(m => (
+            <button key={m}
+              onClick={() => { setMode(m); if (m === 'scratch') setSelectedTemplate(null) }}
+              style={{
+                flex: 1, padding: '10px 16px', borderRadius: 9, fontSize: 13, fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit',
+                border: mode === m ? 'none' : '1px solid var(--gray-200)',
+                background: mode === m ? 'var(--orange)' : 'white',
+                color: mode === m ? 'white' : 'var(--gray-600)',
+                boxShadow: mode === m ? '0 2px 8px rgba(249,115,22,0.3)' : '0 1px 3px rgba(0,0,0,0.06)',
+              }}
+            >
+              {m === 'template' ? '📋 Usar plantilla' : '✏️ Crear desde cero'}
+            </button>
+          ))}
+        </div>
+
+        {mode === 'template' && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {CRONOGRAMA_TEMPLATES.map(tmpl => {
+              const sel = selectedTemplate?.id === tmpl.id
+              return (
+                <div key={tmpl.id}
+                  onClick={() => setSelectedTemplate(tmpl)}
+                  style={{
+                    padding: '14px 16px', borderRadius: 10, cursor: 'pointer',
+                    border: sel ? '2px solid var(--orange)' : '1px solid var(--gray-200)',
+                    background: sel ? '#FFF7ED' : 'white',
+                    boxShadow: sel ? '0 2px 8px rgba(249,115,22,0.15)' : '0 1px 3px rgba(0,0,0,0.05)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <div style={{ fontSize: 26, marginBottom: 6 }}>{tmpl.icono}</div>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--gray-800)', marginBottom: 3 }}>{tmpl.nombre}</div>
+                  <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{tmpl.duracionEstimada}</div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {mode === 'scratch' && (
+          <div style={{
+            padding: 24, borderRadius: 12, border: '1px dashed var(--gray-300)',
+            background: 'var(--gray-100)', textAlign: 'center', color: 'var(--gray-500)', fontSize: 13,
+          }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>🗂️</div>
+            Vas a crear un cronograma vacío donde podés agregar etapas manualmente en el siguiente paso.
+          </div>
+        )}
+      </div>
+
+      {selectedTemplate && mode === 'template' && (
+        <div style={{ width: 240, flexShrink: 0 }}>
+          <div style={{ background: '#FFF7ED', borderRadius: 12, border: '1px solid #FED7AA', padding: '16px', height: '100%' }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>{selectedTemplate.icono}</div>
+            <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--gray-800)', marginBottom: 4 }}>{selectedTemplate.nombre}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 12, lineHeight: 1.5 }}>{selectedTemplate.descripcion}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--orange)', marginBottom: 8 }}>DURACIÓN EST.: {selectedTemplate.duracionEstimada}</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', marginBottom: 6 }}>{selectedTemplate.etapas.length} ETAPAS INCLUIDAS</div>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {selectedTemplate.etapas.map((et, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--orange)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>{et.nombre}</span>
+                  {et.esCritica && <span style={{ fontSize: 9, color: '#DC2626', fontWeight: 700 }}>●</span>}
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 9, color: 'var(--gray-400)', marginTop: 8 }}>● = tarea crítica</div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Paso 2: Parámetros ────────────────────────────────────────────────────────
+function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, template, mode,
+                 scratchEtapas, setScratchEtapas, showMiniModal, setShowMiniModal, miniNombre, setMiniNombre }) {
+  const etapas = template?.etapas || []
+  const allSelected = etapas.length > 0 && etapas.every(et => etapasIncluidas.includes(et.nombre))
+
+  const toggleEtapa = (nombre) => {
+    setEtapasIncluidas(prev => prev.includes(nombre) ? prev.filter(n => n !== nombre) : [...prev, nombre])
+  }
+
+  const Field = ({ label, children }) => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>{label}</label>
+      {children}
+    </div>
+  )
+
+  const inputStyle = {
+    width: '100%', padding: '9px 12px', borderRadius: 8,
+    border: '1px solid var(--gray-200)', fontSize: 13,
+    color: 'var(--gray-700)', fontFamily: 'inherit',
+    background: 'white', boxSizing: 'border-box',
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 24 }}>
+      <div style={{ flex: 1 }}>
+        <Field label="Autor cronograma">
+          <select style={inputStyle} value={params.autorCronograma || ''} onChange={e => setParams(p => ({ ...p, autorCronograma: e.target.value }))}>
+            <option value="">Seleccionar…</option>
+            {sampleTeam.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </Field>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Field label="Fecha de inicio">
+            <input type="date" style={inputStyle} value={params.fechaInicio} onChange={e => setParams(p => ({ ...p, fechaInicio: e.target.value }))} />
+          </Field>
+          <Field label="Fecha fin objetivo">
+            <input type="date" style={inputStyle} value={params.fechaFin} onChange={e => setParams(p => ({ ...p, fechaFin: e.target.value }))} />
+          </Field>
+        </div>
+        <Field label="Responsable de obra">
+          <select style={inputStyle} value={params.responsableObra} onChange={e => setParams(p => ({ ...p, responsableObra: e.target.value }))}>
+            <option value="">Seleccionar…</option>
+            {sampleTeam.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </Field>
+        <Field label="Responsable de proyecto">
+          <select style={inputStyle} value={params.responsableProyecto} onChange={e => setParams(p => ({ ...p, responsableProyecto: e.target.value }))}>
+            <option value="">Seleccionar…</option>
+            {sampleTeam.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </Field>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--gray-100)', borderRadius: 8 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)' }}>Aplicar incidencia automática</div>
+            <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Distribuye el porcentaje de cada etapa según su duración</div>
+          </div>
+          <button onClick={() => setParams(p => ({ ...p, pesosAuto: !p.pesosAuto }))}
+            style={{ width: 44, height: 24, borderRadius: 99, border: 'none', cursor: 'pointer', background: params.pesosAuto ? 'var(--orange)' : '#D1D5DB', position: 'relative', transition: 'background 0.2s', flexShrink: 0, padding: 0 }}>
+            <div style={{ position: 'absolute', top: 3, width: 18, height: 18, borderRadius: '50%', background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left 0.2s', left: params.pesosAuto ? 23 : 3 }} />
+          </button>
+        </div>
+      </div>
+
+      {mode === 'template' && etapas.length > 0 && (
+        <div style={{ width: 240, flexShrink: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)' }}>Etapas a incluir</span>
+            <button onClick={() => setEtapasIncluidas(allSelected ? [] : etapas.map(et => et.nombre))}
+              style={{ fontSize: 11, color: 'var(--orange)', fontWeight: 700, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+              {allSelected ? 'Deseleccionar todo' : 'Seleccionar todo'}
+            </button>
+          </div>
+          <div style={{ maxHeight: 340, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {etapas.map((et, i) => {
+              const checked = etapasIncluidas.includes(et.nombre)
+              return (
+                <label key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7, cursor: 'pointer', background: checked ? '#FFF7ED' : 'white', border: checked ? '1px solid #FED7AA' : '1px solid var(--gray-200)' }}>
+                  <input type="checkbox" checked={checked} onChange={() => toggleEtapa(et.nombre)} style={{ accentColor: 'var(--orange)', width: 14, height: 14 }} />
+                  <span style={{ fontSize: 12, color: 'var(--gray-700)', flex: 1 }}>{et.nombre}</span>
+                  <span style={{ fontSize: 10, color: 'var(--gray-400)' }}>{et.duracionDias}d</span>
+                  {et.esCritica && <span style={{ fontSize: 9, color: '#DC2626', fontWeight: 700 }}>●</span>}
+                </label>
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--gray-400)' }}>{etapasIncluidas.length} / {etapas.length} etapas seleccionadas</div>
+        </div>
+      )}
+
+      {mode === 'scratch' && (
+        <div style={{ width: 240, flexShrink: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', marginBottom: 10 }}>Etapas del cronograma</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10, maxHeight: 280, overflowY: 'auto' }}>
+            {scratchEtapas.length === 0 && (
+              <div style={{ textAlign: 'center', color: 'var(--gray-400)', fontSize: 12, padding: '16px 0' }}>Sin etapas aún</div>
+            )}
+            {scratchEtapas.map((nombre, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 10px', borderRadius: 7, background: '#FFF7ED', border: '1px solid #FED7AA' }}>
+                <span style={{ flex: 1, fontSize: 12, color: 'var(--gray-700)' }}>{nombre}</span>
+                <button onClick={() => setScratchEtapas(prev => prev.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', color: '#EF4444', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+            ))}
+          </div>
+          <button onClick={() => { setShowMiniModal(true); setMiniNombre('') }}
+            style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px dashed var(--orange)', background: 'white', color: 'var(--orange)', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+            + Nueva etapa
+          </button>
+          {showMiniModal && (
+            <div style={{ marginTop: 10, background: 'white', border: '1px solid var(--gray-200)', borderRadius: 10, padding: 14, boxShadow: '0 4px 16px rgba(0,0,0,0.1)' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-700)', marginBottom: 8 }}>Nombre de etapa</div>
+              <input autoFocus value={miniNombre} onChange={e => setMiniNombre(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && miniNombre.trim()) { setScratchEtapas(p => [...p, miniNombre.trim()]); setMiniNombre(''); setShowMiniModal(false) }
+                  if (e.key === 'Escape') { setShowMiniModal(false); setMiniNombre('') }
+                }}
+                placeholder="Ej: Obra gruesa"
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8, outline: 'none' }}
+              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => { setShowMiniModal(false); setMiniNombre('') }}
+                  style={{ flex: 1, padding: '7px', borderRadius: 7, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-600)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
+                <button onClick={() => { if (!miniNombre.trim()) return; setScratchEtapas(p => [...p, miniNombre.trim()]); setMiniNombre(''); setShowMiniModal(false) }}
+                  disabled={!miniNombre.trim()}
+                  style={{ flex: 1, padding: '7px', borderRadius: 7, border: 'none', background: miniNombre.trim() ? 'var(--orange)' : 'var(--gray-200)', color: miniNombre.trim() ? 'white' : 'var(--gray-400)', fontSize: 11, fontWeight: 700, cursor: miniNombre.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>Aceptar</button>
+              </div>
+            </div>
+          )}
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--gray-400)' }}>{scratchEtapas.length} etapa{scratchEtapas.length !== 1 ? 's' : ''} agregada{scratchEtapas.length !== 1 ? 's' : ''}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Paso 3: Vista previa ──────────────────────────────────────────────────────
+function Step3({ previewEtapas, setPreviewEtapas, totalTareas, params }) {
+  const [editingEtapa, setEditingEtapa] = useState(null)
+
+  const handleSaveEtapa = (updated) => {
+    let newEtapas = previewEtapas.map(et => et.id === updated.id ? { ...et, ...updated } : et)
+    // Aplicar cascade automáticamente (sin modal en creación)
+    const { impactados, updatedMap } = computeCascade(newEtapas, updated)
+    if (impactados.length > 0) {
+      newEtapas = newEtapas.map(t => updatedMap.has(t.id) ? updatedMap.get(t.id) : t)
+    }
+    // Recalcular incidencias si pesosAuto
+    if (params.pesosAuto) {
+      const totalDur = newEtapas.reduce((s, r) => s + calcDuracionHabil(r.fechaInicio, r.fechaFin), 0)
+      if (totalDur > 0) {
+        newEtapas = newEtapas.map(r => ({
+          ...r,
+          pesoRelativo: Math.round(calcDuracionHabil(r.fechaInicio, r.fechaFin) / totalDur * 100),
+        }))
+      }
+    }
+    setPreviewEtapas(newEtapas)
+    setEditingEtapa(null)
+  }
+
+  const handleAgregarSubetapa = (parentEtapa) => {
+    const newId = Math.max(...previewEtapas.map(e => e.id || 0), 0) + 1
+    setEditingEtapa({
+      id: null,
+      parentId: parentEtapa.id,
+      nombre: '',
+      fechaInicio: parentEtapa.fechaInicio || '',
+      duracionDias: 5,
+      pesoRelativo: 10,
+      dependeDeId: null,
+      tipoVinculo: 'Fin a inicio',
+      desfaseDias: 0,
+    })
+  }
+
+  const handleSaveSubetapa = (sub) => {
+    const newId = Math.max(...previewEtapas.map(e => e.id || 0), 0) + 1
+    setPreviewEtapas(prev => [...prev, { ...sub, id: newId }])
+    setEditingEtapa(null)
+  }
+
+  const Field = ({ label, value }) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{value || '—'}</div>
+    </div>
+  )
+
+  const rootEtapas = previewEtapas.filter(e => !e.parentId)
+
+  return (
+    <div style={{ display: 'flex', gap: 20 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 12 }}>
+          Hacé clic en una etapa para editarla. Los corrimientos se aplican automáticamente según las dependencias.
+        </p>
+        <div style={{ border: '1px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--gray-100)' }}>
+                {['Etapa', 'Inicio', 'Fin Est.', 'Duración (hábiles)', 'Incidencia %'].map(h => (
+                  <th key={h} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--gray-200)' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rootEtapas.map((et, i) => {
+                const hijos = previewEtapas.filter(s => s.parentId === et.id)
+                const dur = calcDuracionHabil(et.fechaInicio, et.fechaFin)
+                return (
+                  <>
+                    <tr key={et.id}
+                      onClick={() => setEditingEtapa(et)}
+                      style={{ borderBottom: '1px solid var(--gray-200)', cursor: 'pointer', transition: 'background 0.1s' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#FFF7ED'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'white'}
+                    >
+                      <td style={{ padding: '9px 12px', fontWeight: 700, color: 'var(--gray-800)' }}>
+                        {et.esCritica && <span style={{ color: '#DC2626', marginRight: 4 }}>●</span>}
+                        {et.nombre}
+                      </td>
+                      <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--gray-600)' }}>{fmtShort(et.fechaInicio)}</td>
+                      <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--gray-600)' }}>{fmtShort(et.fechaFin || calcFechaFin(et.fechaInicio, et.duracionDias))}</td>
+                      <td style={{ padding: '9px 12px', textAlign: 'center' }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-600)', background: 'var(--gray-100)', padding: '2px 8px', borderRadius: 4 }}>{dur}d</span>
+                      </td>
+                      <td style={{ padding: '9px 12px', textAlign: 'center', fontSize: 12, fontWeight: 700, color: 'var(--orange)' }}>{et.pesoRelativo}%</td>
+                    </tr>
+                    {hijos.map(hijo => (
+                      <tr key={hijo.id}
+                        onClick={() => setEditingEtapa(hijo)}
+                        style={{ borderBottom: '1px solid var(--gray-200)', cursor: 'pointer', background: '#FAFAFA' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#FFF7ED'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#FAFAFA'}
+                      >
+                        <td style={{ padding: '7px 12px 7px 28px', fontSize: 12, color: 'var(--gray-700)' }}>└ {hijo.nombre}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 11, color: 'var(--gray-500)' }}>{fmtShort(hijo.fechaInicio)}</td>
+                        <td style={{ padding: '7px 12px', fontSize: 11, color: 'var(--gray-500)' }}>{fmtShort(hijo.fechaFin)}</td>
+                        <td style={{ padding: '7px 12px', textAlign: 'center' }}>
+                          <span style={{ fontSize: 11, color: 'var(--gray-500)', background: 'var(--gray-100)', padding: '1px 6px', borderRadius: 4 }}>{calcDuracionHabil(hijo.fechaInicio, hijo.fechaFin)}d</span>
+                        </td>
+                        <td style={{ padding: '7px 12px', textAlign: 'center', fontSize: 11, color: 'var(--gray-500)' }}>{hijo.pesoRelativo}%</td>
+                      </tr>
+                    ))}
+                  </>
+                )
+              })}
+              {rootEtapas.length === 0 && (
+                <tr><td colSpan={5} style={{ padding: '24px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>No hay etapas para previsualizar</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--gray-400)' }}>
+          Hacé clic en cualquier etapa para editar sus detalles, fechas y dependencias.
+        </div>
+      </div>
+
+      {/* Panel resumen */}
+      <div style={{ width: 200, flexShrink: 0 }}>
+        <div style={{ background: 'linear-gradient(135deg, #FFF7ED, #FEF3C7)', border: '1px solid #FED7AA', borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--orange)', marginBottom: 14 }}>RESUMEN</div>
+          <Field label="Fecha inicio" value={fmtDate(params.fechaInicio)} />
+          <Field label="Fin estimado" value={fmtDate(params.fechaFin)} />
+          <Field label="Total etapas" value={rootEtapas.length} />
+          <Field label="Total tareas" value={totalTareas} />
+          <div style={{ borderTop: '1px solid #FED7AA', paddingTop: 10, marginTop: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4 }}>Avance inicial</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--gray-300)' }}>0%</div>
+          </div>
+        </div>
+      </div>
+
+      {editingEtapa && (
+        <ModalEditarEtapa
+          tarea={editingEtapa}
+          tareas={previewEtapas}
+          onClose={() => setEditingEtapa(null)}
+          onSave={editingEtapa.id ? handleSaveEtapa : handleSaveSubetapa}
+          onAgregarSubetapa={handleAgregarSubetapa}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Modal principal ───────────────────────────────────────────────────────────
+export default function ModalCrearCronograma({ project, onClose, onCrear }) {
+  const [step, setStep]         = useState(1)
+  const [nombre, setNombre]     = useState('')
+  const [mode, setMode]         = useState('template')
+  const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [params, setParams]     = useState({
+    autorCronograma: '',
+    fechaInicio: project.startDate || '',
+    fechaFin:    project.endDate   || '',
+    responsableObra: project.responsible || '',
+    responsableProyecto: '',
+    pesosAuto: true,
+  })
+  const [etapasIncluidas, setEtapasIncluidas] = useState([])
+  const [previewEtapas, setPreviewEtapas]     = useState([])
+  const [scratchEtapas, setScratchEtapas]     = useState([])
+  const [showMiniModal, setShowMiniModal]     = useState(false)
+  const [miniNombre, setMiniNombre]           = useState('')
+
+  const handleSelectTemplate = (tmpl) => {
+    setSelectedTemplate(tmpl)
+    setEtapasIncluidas(tmpl.etapas.map(et => et.nombre))
+  }
+
+  const totalTareas = useMemo(() => {
+    if (mode === 'scratch') return scratchEtapas.length
+    if (!selectedTemplate) return 0
+    return selectedTemplate.etapas
+      .filter(et => etapasIncluidas.includes(et.nombre))
+      .reduce((s, et) => s + et.tareas.length + 1, 0)
+  }, [selectedTemplate, etapasIncluidas, scratchEtapas, mode])
+
+  const buildPreview = () => {
+    if (mode === 'scratch') {
+      if (!scratchEtapas.length || !params.fechaInicio || !params.fechaFin) { setPreviewEtapas([]); return }
+      const total = scratchEtapas.length
+      const totalHabil = Math.max(1, calcDuracionHabil(params.fechaInicio, params.fechaFin))
+      const perEtapa = Math.floor(totalHabil / total)
+      let cursor = params.fechaInicio
+      const etapas = scratchEtapas.map((nombre, i) => {
+        const dur = i === total - 1 ? Math.max(1, calcDuracionHabil(cursor, params.fechaFin)) : perEtapa
+        const fi = cursor
+        const ff = i === total - 1 ? params.fechaFin : calcFechaFin(cursor, dur)
+        cursor = addBusinessDays(ff, 1)
+        return { id: i + 1, nombre, fechaInicio: fi, fechaFin: ff, duracionDias: dur, pesoRelativo: params.pesosAuto ? Math.round(100 / total) : 10, parentId: null, dependeDeId: null, tipoVinculo: 'Fin a inicio', desfaseDias: 0 }
+      })
+      setPreviewEtapas(etapas)
+      return
+    }
+    const tareas = generarTareasDesdeTemplate(selectedTemplate, etapasIncluidas, project.id, params.fechaInicio, params.fechaFin)
+    setPreviewEtapas(tareas.filter(t => t.parentId === null))
+  }
+
+  const canNext = () => {
+    if (step === 1) return nombre.trim() && (mode === 'scratch' || selectedTemplate !== null)
+    if (step === 2) return params.fechaInicio && params.fechaFin
+    return true
+  }
+
+  const goNext = () => {
+    if (step === 2) buildPreview()
+    setStep(s => s + 1)
+  }
+
+  const handleCrear = () => {
+    let tareas
+    if (mode === 'scratch') {
+      tareas = previewEtapas.map((et, i) => ({
+        id: i + 1, obraId: project.id, parentId: null,
+        nombre: et.nombre, tipo: 'etapa',
+        fechaInicio: et.fechaInicio, fechaFin: et.fechaFin,
+        duracionDias: Math.max(0, calcDuracionHabil(et.fechaInicio, et.fechaFin)),
+        responsable: params.responsableObra || '',
+        avanceActual: 0, estado: 'Pendiente',
+        pesoRelativo: et.pesoRelativo,
+        dependeDeId: null, esCritica: false,
+        tipoVinculo: 'Fin a inicio', desfaseDias: 0,
+      }))
+    } else {
+      const rawTareas = generarTareasDesdeTemplate(selectedTemplate, etapasIncluidas, project.id, params.fechaInicio, params.fechaFin)
+      tareas = rawTareas.map(t => {
+        if (t.parentId === null) {
+          const preview = previewEtapas.find(pe => pe.id === t.id)
+          if (preview) return { ...t, fechaInicio: preview.fechaInicio, fechaFin: preview.fechaFin, pesoRelativo: preview.pesoRelativo, nombre: preview.nombre }
+        }
+        return { ...t, responsable: params.responsableObra }
+      })
+    }
+    onCrear({ obraId: project.id, nombre, creadoEn: new Date().toISOString().split('T')[0], autorCronograma: params.autorCronograma, tareas, informes: [] })
+    onClose()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16, backdropFilter: 'blur(2px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'white', borderRadius: 18, width: '100%', maxWidth: 820, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}>
+        <div style={{ padding: '22px 28px 0', borderBottom: '1px solid var(--gray-200)', paddingBottom: 0 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <div>
+              <h2 style={{ fontSize: 18, fontWeight: 900, color: 'var(--gray-900)', marginBottom: 2 }}>Nuevo cronograma</h2>
+              <p style={{ fontSize: 12, color: 'var(--gray-500)' }}>{project.name}</p>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--gray-400)', lineHeight: 1, padding: '4px 8px' }}>×</button>
+          </div>
+          <StepBar step={step} />
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+          {step === 1 && (
+            <Step1 mode={mode} setMode={setMode} selectedTemplate={selectedTemplate} setSelectedTemplate={handleSelectTemplate}
+              nombre={nombre} setNombre={setNombre} />
+          )}
+          {step === 2 && (
+            <Step2 params={params} setParams={setParams}
+              etapasIncluidas={etapasIncluidas} setEtapasIncluidas={setEtapasIncluidas}
+              template={selectedTemplate} mode={mode}
+              scratchEtapas={scratchEtapas} setScratchEtapas={setScratchEtapas}
+              showMiniModal={showMiniModal} setShowMiniModal={setShowMiniModal}
+              miniNombre={miniNombre} setMiniNombre={setMiniNombre} />
+          )}
+          {step === 3 && (
+            <Step3 previewEtapas={previewEtapas} setPreviewEtapas={setPreviewEtapas}
+              totalTareas={totalTareas} params={params} />
+          )}
+        </div>
+
+        <div style={{ padding: '16px 28px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button onClick={step === 1 ? onClose : () => setStep(s => s - 1)}
+            style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>
+            {step === 1 ? 'Cancelar' : '← Anterior'}
+          </button>
+          <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>Paso {step} de 3</div>
+          {step < 3 ? (
+            <button onClick={goNext} disabled={!canNext()}
+              style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: canNext() ? 'var(--orange)' : 'var(--gray-200)', color: canNext() ? 'white' : 'var(--gray-400)', cursor: canNext() ? 'pointer' : 'default', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: canNext() ? '0 2px 8px rgba(249,115,22,0.4)' : 'none' }}>
+              Siguiente →
+            </button>
+          ) : (
+            <button onClick={handleCrear}
+              style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: 'var(--orange)', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(249,115,22,0.4)' }}>
+              Crear cronograma ✓
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
