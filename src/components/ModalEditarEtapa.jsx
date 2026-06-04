@@ -8,6 +8,25 @@ function fmtLong(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
+const inputStyle = {
+  width: '100%', padding: '9px 12px', borderRadius: 8,
+  border: '1px solid var(--gray-200)', fontSize: 13,
+  color: 'var(--gray-700)', fontFamily: 'inherit',
+  background: 'white', boxSizing: 'border-box',
+}
+
+function Field({ label, children, hint }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>
+        {label}
+      </label>
+      {children}
+      {hint && <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 3 }}>{hint}</div>}
+    </div>
+  )
+}
+
 export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgregarSubetapa }) {
   const isNueva    = !tarea?.id
   const isSubtarea = tarea?.parentId !== null && tarea?.parentId !== undefined
@@ -15,18 +34,18 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
   const [form, setForm] = useState({
     nombre:       tarea?.nombre      || '',
     fechaInicio:  tarea?.fechaInicio || '',
-    duracionDias: tarea?.duracionDias || 5,
-    pesoRelativo: tarea?.pesoRelativo || 10,
+    duracionDias: String(tarea?.duracionDias ?? 5),
+    pesoRelativo: String(tarea?.pesoRelativo ?? 10),
     dependeDeId:  tarea?.dependeDeId  ?? null,
     tipoVinculo:  tarea?.tipoVinculo  || 'Fin a inicio',
-    desfaseDias:  tarea?.desfaseDias  || 0,
+    desfaseDias:  String(tarea?.desfaseDias ?? 0),
   })
 
-  const fechaFin = form.fechaInicio && form.duracionDias > 0
+  const fechaFin = form.fechaInicio && Number(form.duracionDias) > 0
     ? calcFechaFin(form.fechaInicio, Number(form.duracionDias))
     : ''
 
-  const canSave = form.nombre.trim() && form.fechaInicio && form.duracionDias > 0
+  const canSave = form.nombre.trim() && form.fechaInicio && Number(form.duracionDias) > 0
 
   const handleSave = () => {
     if (!canSave) return
@@ -40,23 +59,6 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
       dependeDeId:   form.dependeDeId ? Number(form.dependeDeId) : null,
     })
   }
-
-  const inputStyle = {
-    width: '100%', padding: '9px 12px', borderRadius: 8,
-    border: '1px solid var(--gray-200)', fontSize: 13,
-    color: 'var(--gray-700)', fontFamily: 'inherit',
-    background: 'white', boxSizing: 'border-box',
-  }
-
-  const Field = ({ label, children, hint }) => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>
-        {label}
-      </label>
-      {children}
-      {hint && <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 3 }}>{hint}</div>}
-    </div>
-  )
 
   // Excluir la tarea actual y sus hijos del selector de predecesoras
   const opcionesPredecesora = tareas.filter(t => t.id !== tarea?.id && t.parentId !== tarea?.id)
@@ -95,7 +97,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
             </Field>
             <Field label="Duración (días hábiles)">
               <input type="number" min={1} style={inputStyle} value={form.duracionDias}
-                onChange={e => setForm(f => ({ ...f, duracionDias: Math.max(1, Number(e.target.value)) }))} />
+                onChange={e => setForm(f => ({ ...f, duracionDias: e.target.value }))} />
             </Field>
           </div>
 
@@ -107,7 +109,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
 
           <Field label="Incidencia %">
             <input type="number" min={0} max={100} style={inputStyle} value={form.pesoRelativo}
-              onChange={e => setForm(f => ({ ...f, pesoRelativo: Number(e.target.value) }))} />
+              onChange={e => setForm(f => ({ ...f, pesoRelativo: e.target.value }))} />
           </Field>
 
           {/* Dependencias */}
@@ -139,7 +141,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
                 </Field>
                 <Field label="Días de desfase" hint="Días hábiles de lag">
                   <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
-                    onChange={e => setForm(f => ({ ...f, desfaseDias: Number(e.target.value) }))} />
+                    onChange={e => setForm(f => ({ ...f, desfaseDias: e.target.value }))} />
                 </Field>
               </div>
             )}

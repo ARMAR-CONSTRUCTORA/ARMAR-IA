@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
-import { CRONOGRAMA_TEMPLATES, generarTareasDesdeTemplate } from '../data/cronogramaTemplates'
-import { sampleTeam } from '../data/sampleData'
+import { generarTareasDesdeTemplate } from '../data/cronogramaTemplates'
+import { loadTemplates } from '../data/templateStorage'
 import { calcDuracionHabil, calcFechaFin, addBusinessDays, computeCascade } from '../utils/calendarUtils'
 import ModalEditarEtapa from './ModalEditarEtapa'
 
@@ -18,7 +18,39 @@ function diffCalDias(a, b) {
   return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000)
 }
 
+function calcFechaFinDesde(fechaInicio, valor, unidad) {
+  if (!fechaInicio || !valor || Number(valor) <= 0) return ''
+  const n = Number(valor)
+  const dias = unidad === 'Semanas' ? n * 5 : unidad === 'Meses' ? n * 22 : n
+  return calcFechaFin(fechaInicio, dias)
+}
+
 const STEP_LABELS = ['Tipo de cronograma', 'Parámetros', 'Vista previa']
+
+const inputStyle = {
+  width: '100%', padding: '9px 12px', borderRadius: 8,
+  border: '1px solid var(--gray-200)', fontSize: 13,
+  color: 'var(--gray-700)', fontFamily: 'inherit',
+  background: 'white', boxSizing: 'border-box',
+}
+
+function FormField({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>{label}</label>
+      {children}
+    </div>
+  )
+}
+
+function SummaryField({ label, value }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{value || '—'}</div>
+    </div>
+  )
+}
 
 // ── Indicador de pasos ────────────────────────────────────────────────────────
 function StepBar({ step }) {
@@ -56,7 +88,7 @@ function StepBar({ step }) {
 }
 
 // ── Paso 1: Tipo ──────────────────────────────────────────────────────────────
-function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, setNombre }) {
+function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, setNombre, templates }) {
   const inputStyle = {
     width: '100%', padding: '9px 12px', borderRadius: 8,
     border: '1px solid var(--gray-200)', fontSize: 14,
@@ -108,7 +140,7 @@ function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, s
 
         {mode === 'template' && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {CRONOGRAMA_TEMPLATES.map(tmpl => {
+            {templates.map(tmpl => {
               const sel = selectedTemplate?.id === tmpl.id
               return (
                 <div key={tmpl.id}
@@ -167,7 +199,27 @@ function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, s
 }
 
 // ── Paso 2: Parámetros ────────────────────────────────────────────────────────
-function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, template, mode,
+const CATEGORIES = ['OBRA', 'PROYECTO', 'GREMIOS']
+
+function TeamSelect({ value, onChange, teamMembers, style }) {
+  const members = teamMembers || []
+  return (
+    <select style={style} value={value} onChange={onChange}>
+      <option value="">Seleccionar…</option>
+      {CATEGORIES.map(cat => {
+        const group = members.filter(m => m.category === cat)
+        if (!group.length) return null
+        return (
+          <optgroup key={cat} label={cat}>
+            {group.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+          </optgroup>
+        )
+      })}
+    </select>
+  )
+}
+
+function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, template, mode, teamMembers,
                  scratchEtapas, setScratchEtapas, showMiniModal, setShowMiniModal, miniNombre, setMiniNombre }) {
   const etapas = template?.etapas || []
   const allSelected = etapas.length > 0 && etapas.every(et => etapasIncluidas.includes(et.nombre))
@@ -176,49 +228,58 @@ function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, templat
     setEtapasIncluidas(prev => prev.includes(nombre) ? prev.filter(n => n !== nombre) : [...prev, nombre])
   }
 
-  const Field = ({ label, children }) => (
-    <div style={{ marginBottom: 14 }}>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 5 }}>{label}</label>
-      {children}
-    </div>
-  )
-
-  const inputStyle = {
-    width: '100%', padding: '9px 12px', borderRadius: 8,
-    border: '1px solid var(--gray-200)', fontSize: 13,
-    color: 'var(--gray-700)', fontFamily: 'inherit',
-    background: 'white', boxSizing: 'border-box',
-  }
-
   return (
     <div style={{ display: 'flex', gap: 24 }}>
       <div style={{ flex: 1 }}>
-        <Field label="Autor cronograma">
-          <select style={inputStyle} value={params.autorCronograma || ''} onChange={e => setParams(p => ({ ...p, autorCronograma: e.target.value }))}>
-            <option value="">Seleccionar…</option>
-            {sampleTeam.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </Field>
+        <FormField label="Autor cronograma">
+          <TeamSelect style={inputStyle} value={params.autorCronograma || ''} onChange={e => setParams(p => ({ ...p, autorCronograma: e.target.value }))} teamMembers={teamMembers} />
+        </FormField>
+        <FormField label="Fecha de inicio">
+          <input type="date" style={inputStyle} value={params.fechaInicio}
+            onChange={e => {
+              const fi = e.target.value
+              const ff = calcFechaFinDesde(fi, params.duracionValor, params.duracionUnidad)
+              setParams(p => ({ ...p, fechaInicio: fi, fechaFin: ff }))
+            }} />
+        </FormField>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Field label="Fecha de inicio">
-            <input type="date" style={inputStyle} value={params.fechaInicio} onChange={e => setParams(p => ({ ...p, fechaInicio: e.target.value }))} />
-          </Field>
-          <Field label="Fecha fin objetivo">
-            <input type="date" style={inputStyle} value={params.fechaFin} onChange={e => setParams(p => ({ ...p, fechaFin: e.target.value }))} />
-          </Field>
+          <FormField label="Duración">
+            <div style={{ display: 'flex', gap: 6 }}>
+              <input type="number" min={1} style={{ ...inputStyle, flex: 1 }}
+                value={params.duracionValor}
+                onChange={e => {
+                  const val = e.target.value
+                  const ff = calcFechaFinDesde(params.fechaInicio, val, params.duracionUnidad)
+                  setParams(p => ({ ...p, duracionValor: val, fechaFin: ff }))
+                }} />
+              <select style={{ ...inputStyle, width: 'auto', minWidth: 90 }}
+                value={params.duracionUnidad}
+                onChange={e => {
+                  const unidad = e.target.value
+                  const ff = calcFechaFinDesde(params.fechaInicio, params.duracionValor, unidad)
+                  setParams(p => ({ ...p, duracionUnidad: unidad, fechaFin: ff }))
+                }}>
+                <option>Días</option>
+                <option>Semanas</option>
+                <option>Meses</option>
+              </select>
+            </div>
+          </FormField>
+          <FormField label="Fin estimado">
+            <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none', display: 'flex', alignItems: 'center' }}>
+              {params.fechaFin ? fmtDate(params.fechaFin) : '—'}
+            </div>
+          </FormField>
         </div>
-        <Field label="Responsable de obra">
-          <select style={inputStyle} value={params.responsableObra} onChange={e => setParams(p => ({ ...p, responsableObra: e.target.value }))}>
-            <option value="">Seleccionar…</option>
-            {sampleTeam.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </Field>
-        <Field label="Responsable de proyecto">
-          <select style={inputStyle} value={params.responsableProyecto} onChange={e => setParams(p => ({ ...p, responsableProyecto: e.target.value }))}>
-            <option value="">Seleccionar…</option>
-            {sampleTeam.map(name => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </Field>
+        <FormField label="Responsable de obra">
+          <TeamSelect style={inputStyle} value={params.responsableObra} onChange={e => setParams(p => ({ ...p, responsableObra: e.target.value }))} teamMembers={teamMembers} />
+        </FormField>
+        <FormField label="Responsable de proyecto">
+          <TeamSelect style={inputStyle} value={params.responsableProyecto} onChange={e => setParams(p => ({ ...p, responsableProyecto: e.target.value }))} teamMembers={teamMembers} />
+        </FormField>
+        <FormField label="Contratista principal">
+          <TeamSelect style={inputStyle} value={params.contratistaPrincipal || ''} onChange={e => setParams(p => ({ ...p, contratistaPrincipal: e.target.value }))} teamMembers={teamMembers} />
+        </FormField>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', background: 'var(--gray-100)', borderRadius: 8 }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-700)' }}>Aplicar incidencia automática</div>
@@ -349,13 +410,6 @@ function Step3({ previewEtapas, setPreviewEtapas, totalTareas, params }) {
     setEditingEtapa(null)
   }
 
-  const Field = ({ label, value }) => (
-    <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--gray-800)' }}>{value || '—'}</div>
-    </div>
-  )
-
   const rootEtapas = previewEtapas.filter(e => !e.parentId)
 
   return (
@@ -430,10 +484,10 @@ function Step3({ previewEtapas, setPreviewEtapas, totalTareas, params }) {
       <div style={{ width: 200, flexShrink: 0 }}>
         <div style={{ background: 'linear-gradient(135deg, #FFF7ED, #FEF3C7)', border: '1px solid #FED7AA', borderRadius: 12, padding: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--orange)', marginBottom: 14 }}>RESUMEN</div>
-          <Field label="Fecha inicio" value={fmtDate(params.fechaInicio)} />
-          <Field label="Fin estimado" value={fmtDate(params.fechaFin)} />
-          <Field label="Total etapas" value={rootEtapas.length} />
-          <Field label="Total tareas" value={totalTareas} />
+          <SummaryField label="Fecha inicio" value={fmtDate(params.fechaInicio)} />
+          <SummaryField label="Fin estimado" value={fmtDate(params.fechaFin)} />
+          <SummaryField label="Total etapas" value={rootEtapas.length} />
+          <SummaryField label="Total tareas" value={totalTareas} />
           <div style={{ borderTop: '1px solid #FED7AA', paddingTop: 10, marginTop: 6 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', marginBottom: 4 }}>Avance inicial</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: 'var(--gray-300)' }}>0%</div>
@@ -455,17 +509,21 @@ function Step3({ previewEtapas, setPreviewEtapas, totalTareas, params }) {
 }
 
 // ── Modal principal ───────────────────────────────────────────────────────────
-export default function ModalCrearCronograma({ project, onClose, onCrear }) {
+export default function ModalCrearCronograma({ project, teamMembers, onClose, onCrear }) {
   const [step, setStep]         = useState(1)
   const [nombre, setNombre]     = useState('')
   const [mode, setMode]         = useState('template')
   const [selectedTemplate, setSelectedTemplate] = useState(null)
+  const [templates]             = useState(() => loadTemplates())
   const [params, setParams]     = useState({
     autorCronograma: '',
     fechaInicio: project.startDate || '',
-    fechaFin:    project.endDate   || '',
+    fechaFin: '',
+    duracionValor: '',
+    duracionUnidad: 'Días',
     responsableObra: project.responsible || '',
     responsableProyecto: '',
+    contratistaPrincipal: '',
     pesosAuto: true,
   })
   const [etapasIncluidas, setEtapasIncluidas] = useState([])
@@ -543,7 +601,7 @@ export default function ModalCrearCronograma({ project, onClose, onCrear }) {
         return { ...t, responsable: params.responsableObra }
       })
     }
-    onCrear({ obraId: project.id, nombre, creadoEn: new Date().toISOString().split('T')[0], autorCronograma: params.autorCronograma, tareas, informes: [] })
+    onCrear({ obraId: project.id, nombre, creadoEn: new Date().toISOString().split('T')[0], autorCronograma: params.autorCronograma, contratistaPrincipal: params.contratistaPrincipal, tareas, informes: [] })
     onClose()
   }
 
@@ -565,12 +623,13 @@ export default function ModalCrearCronograma({ project, onClose, onCrear }) {
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
           {step === 1 && (
             <Step1 mode={mode} setMode={setMode} selectedTemplate={selectedTemplate} setSelectedTemplate={handleSelectTemplate}
-              nombre={nombre} setNombre={setNombre} />
+              nombre={nombre} setNombre={setNombre} templates={templates} />
           )}
           {step === 2 && (
             <Step2 params={params} setParams={setParams}
               etapasIncluidas={etapasIncluidas} setEtapasIncluidas={setEtapasIncluidas}
               template={selectedTemplate} mode={mode}
+              teamMembers={teamMembers}
               scratchEtapas={scratchEtapas} setScratchEtapas={setScratchEtapas}
               showMiniModal={showMiniModal} setShowMiniModal={setShowMiniModal}
               miniNombre={miniNombre} setMiniNombre={setMiniNombre} />
