@@ -397,7 +397,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
 }
 
 // ── Historial de informes ─────────────────────────────────────────────────────
-function HistorialInformes({ informes, tareas, onEditar }) {
+function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   if (!informes || !informes.length) return null
 
@@ -440,12 +440,14 @@ function HistorialInformes({ informes, tareas, onEditar }) {
                 <div style={{ fontSize: 16, fontWeight: 900, color: progressColor(avGen) }}>{avGen}%</div>
                 <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>{avAnt}% → {avGen}%</div>
               </div>
-              <button
-                onClick={e => { e.stopPropagation(); onEditar(informe) }}
-                style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
-              >
-                Editar
-              </button>
+              {isEditor && (
+                <button
+                  onClick={e => { e.stopPropagation(); onEditar(informe) }}
+                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}
+                >
+                  Editar
+                </button>
+              )}
               <span style={{ fontSize: 10, color: 'var(--gray-400)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>▶</span>
             </div>
             {isExpanded && (
@@ -740,17 +742,21 @@ function ModalEditarInforme({ informe, tareas, informes, onSave, onClose }) {
 }
 
 // ── Estado vacío ──────────────────────────────────────────────────────────────
-function EmptyState({ onCrear }) {
+function EmptyState({ onCrear, isEditor }) {
   return (
     <div style={{ padding: '48px 24px', textAlign: 'center' }}>
       <div style={{ fontSize: 52, marginBottom: 14 }}>📅</div>
       <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-800)', marginBottom: 8 }}>Esta obra no tiene cronograma</h3>
       <p style={{ fontSize: 13, color: 'var(--gray-500)', marginBottom: 24, lineHeight: 1.6, maxWidth: 340, margin: '0 auto 24px' }}>
-        Creá el cronograma usando una plantilla prediseñada o desde cero para hacer seguimiento de etapas y avance.
+        {isEditor
+          ? 'Creá el cronograma usando una plantilla prediseñada o desde cero para hacer seguimiento de etapas y avance.'
+          : 'Aún no se ha creado un cronograma para esta obra.'}
       </p>
-      <button onClick={onCrear} style={{ padding: '11px 28px', borderRadius: 10, border: 'none', background: 'var(--orange)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(249,115,22,0.4)' }}>
-        📋 Crear cronograma
-      </button>
+      {isEditor && (
+        <button onClick={onCrear} style={{ padding: '11px 28px', borderRadius: 10, border: 'none', background: 'var(--orange)', color: 'white', fontWeight: 700, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 3px 10px rgba(249,115,22,0.4)' }}>
+          📋 Crear cronograma
+        </button>
+      )}
     </div>
   )
 }
@@ -854,7 +860,7 @@ function ModalImpacto({ data, onApply, onDismiss }) {
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme }) {
+export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor }) {
   const [selectedId,      setSelectedId]      = useState(() => cronogramas[0]?.id || null)
   const [showCrearModal,  setShowCrearModal]   = useState(false)
   const [showAvanceModal, setShowAvanceModal]  = useState(false)
@@ -881,7 +887,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   if (!cronogramas.length) {
     return (
       <>
-        <EmptyState onCrear={() => setShowCrearModal(true)} />
+        <EmptyState onCrear={() => setShowCrearModal(true)} isEditor={isEditor} />
         {showCrearModal && (
           <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)}
             onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />
@@ -1003,24 +1009,28 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
             {c.nombre}
           </button>
         ))}
-        <button onClick={() => setShowCrearModal(true)}
-          style={{ padding: '6px 12px', borderRadius: 7, border: '1px dashed var(--gray-300)', background: 'white', color: 'var(--gray-500)', fontSize: 16, cursor: 'pointer', fontWeight: 700, flexShrink: 0 }}
-          title="Nuevo cronograma">
-          +
-        </button>
+        {isEditor && (
+          <button onClick={() => setShowCrearModal(true)}
+            style={{ padding: '6px 12px', borderRadius: 7, border: '1px dashed var(--gray-300)', background: 'white', color: 'var(--gray-500)', fontSize: 16, cursor: 'pointer', fontWeight: 700, flexShrink: 0 }}
+            title="Nuevo cronograma">
+            +
+          </button>
+        )}
       </div>
 
       {/* ── Toolbar ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-        {structuralMode ? (
-          <button onClick={() => setStructuralMode(false)} style={btnStyle(true)}>✓ Listo</button>
-        ) : (
-          <>
-            <button onClick={() => setShowCrearModal(true)} style={btnStyle()}>📋 Usar plantilla</button>
-            <button onClick={() => setStructuralMode(true)} style={btnStyle()}>✏️ Editar estructura</button>
-            <button onClick={() => setShowAvanceModal(true)} style={btnStyle(true)}>+ Cargar avance</button>
-            <button onClick={() => setShowDeleteModal(true)} style={btnStyle(false, true)}>🗑 Eliminar cronograma</button>
-          </>
+        {isEditor && (
+          structuralMode ? (
+            <button onClick={() => setStructuralMode(false)} style={btnStyle(true)}>✓ Listo</button>
+          ) : (
+            <>
+              <button onClick={() => setShowCrearModal(true)} style={btnStyle()}>📋 Usar plantilla</button>
+              <button onClick={() => setStructuralMode(true)} style={btnStyle()}>✏️ Editar estructura</button>
+              <button onClick={() => setShowAvanceModal(true)} style={btnStyle(true)}>+ Cargar avance</button>
+              <button onClick={() => setShowDeleteModal(true)} style={btnStyle(false, true)}>🗑 Eliminar cronograma</button>
+            </>
+          )
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5 }}>
           <span style={{ fontSize: 11, color: 'var(--gray-500)', fontWeight: 600, marginRight: 2 }}>Vista: {zoomLabel}</span>
@@ -1035,7 +1045,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
           <TablaGantt
             tareas={tareas}
             structuralMode={structuralMode}
-            onClickTarea={setEditingTarea}
+            onClickTarea={isEditor ? setEditingTarea : () => {}}
             onDeleteTarea={handleDeleteTarea}
             onAddSubtarea={handleAddSubtarea}
             ppd={ppd}
@@ -1050,6 +1060,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         informes={informes}
         tareas={tareas}
         onEditar={setEditingInforme}
+        isEditor={isEditor}
       />
 
       {/* ── Modales ── */}

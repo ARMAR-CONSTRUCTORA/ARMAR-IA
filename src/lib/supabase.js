@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import bcrypt from 'bcryptjs'
 
 export const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
@@ -127,4 +128,29 @@ export async function upsertTeamMember(member) {
 export async function deleteTeamMember(id) {
   const { error } = await supabase.from('team_members').delete().eq('id', id)
   if (error) console.error('deleteTeamMember:', error)
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
+
+export async function loginUsuario(nombre, password) {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('nombre', nombre)
+    .single()
+  if (error || !data) return null
+  const match = await bcrypt.compare(password, data.password_hash)
+  if (!match) return null
+  return { id: data.id, nombre: data.nombre }
+}
+
+export async function crearUsuario(nombre, password) {
+  const hash = await bcrypt.hash(password, 10)
+  const { data, error } = await supabase
+    .from('usuarios')
+    .insert({ nombre, password_hash: hash })
+    .select()
+    .single()
+  if (error) { console.error('crearUsuario:', error); return null }
+  return { id: data.id, nombre: data.nombre }
 }

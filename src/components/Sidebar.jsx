@@ -61,8 +61,7 @@ function NavItems({ activePage, onNavigate }) {
   )
 }
 
-function SidebarContent({ activePage, onNavigate, onClose, showClose }) {
-  // onNavigate ya está disponible para el logo
+function SidebarContent({ activePage, onNavigate, onClose, showClose, currentUser, onLoginClick, onLogout }) {
   return (
     <>
       {/* Logo header */}
@@ -103,18 +102,63 @@ function SidebarContent({ activePage, onNavigate, onClose, showClose }) {
 
       <NavItems activePage={activePage} onNavigate={onNavigate} />
 
-      {/* Footer */}
+      {/* Auth footer */}
       <div style={{
-        padding: '14px 20px', borderTop: '1px solid var(--gray-200)',
-        fontSize: 11, color: 'var(--gray-400)', textAlign: 'center', flexShrink: 0,
+        padding: '14px 16px', borderTop: '1px solid var(--gray-200)',
+        flexShrink: 0,
       }}>
-        ARMAR · Sistema de Obras · {new Date().getFullYear()}
+        {currentUser ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: '50%',
+              background: 'var(--orange)', color: 'white',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 800, flexShrink: 0,
+            }}>
+              {currentUser.nombre.charAt(0).toUpperCase()}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {currentUser.nombre}
+              </div>
+              <button
+                onClick={onLogout}
+                style={{
+                  background: 'none', border: 'none', padding: 0,
+                  fontSize: 11, color: 'var(--gray-400)', cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={onLoginClick}
+            style={{
+              width: '100%', padding: '9px 14px', borderRadius: 8,
+              border: '1px solid var(--gray-200)', background: 'white',
+              color: 'var(--gray-600)', cursor: 'pointer', fontWeight: 700,
+              fontSize: 13, fontFamily: 'inherit', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', gap: 6,
+              marginBottom: 8,
+            }}
+          >
+            🔐 Iniciar sesión
+          </button>
+        )}
+        <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'center' }}>
+          ARMAR · Sistema de Obras · {new Date().getFullYear()}
+        </div>
       </div>
     </>
   )
 }
 
-function Sidebar({ activePage, onNavigate, isOpen, onClose, isDesktop }) {
+function Sidebar({ activePage, onNavigate, isOpen, onClose, isDesktop, currentUser, onLoginClick, onLogout }) {
+  const authProps = { currentUser, onLoginClick, onLogout }
+
   /* ── Desktop: fixed sidebar ── */
   if (isDesktop) {
     return (
@@ -125,7 +169,7 @@ function Sidebar({ activePage, onNavigate, isOpen, onClose, isDesktop }) {
         position: 'fixed', left: 0, top: 0, bottom: 0, zIndex: 50,
         boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
       }}>
-        <SidebarContent activePage={activePage} onNavigate={onNavigate} />
+        <SidebarContent activePage={activePage} onNavigate={onNavigate} {...authProps} />
       </aside>
     )
   }
@@ -158,6 +202,7 @@ function Sidebar({ activePage, onNavigate, isOpen, onClose, isDesktop }) {
           onNavigate={onNavigate}
           onClose={onClose}
           showClose
+          {...authProps}
         />
       </aside>
     </>

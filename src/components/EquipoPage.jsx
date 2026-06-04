@@ -199,7 +199,7 @@ function AddMemberModal({ category, onAdd, onClose }) {
   )
 }
 
-function MemberCard({ member, obras, onEdit, onDelete }) {
+function MemberCard({ member, obras, onEdit, onDelete, isEditor }) {
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState(member.name)
   const inputRef = useRef(null)
@@ -279,32 +279,34 @@ function MemberCard({ member, obras, onEdit, onDelete }) {
               promedio
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 4 }}>
-            <button
-              onClick={() => { setEditName(member.name); setEditing(true) }}
-              title="Editar nombre"
-              style={{
-                width: 26, height: 26, borderRadius: 6, border: '1px solid var(--gray-200)',
-                background: 'white', cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                color: 'var(--gray-400)', fontSize: 13, transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#EFF6FF'; e.currentTarget.style.color = '#3B82F6'; e.currentTarget.style.borderColor = '#BFDBFE' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--gray-400)'; e.currentTarget.style.borderColor = 'var(--gray-200)' }}
-            >✏️</button>
-            <button
-              onClick={() => onDelete(member.id, member.name)}
-              title="Eliminar"
-              style={{
-                width: 26, height: 26, borderRadius: 6, border: '1px solid var(--gray-200)',
-                background: 'white', cursor: 'pointer', display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                color: 'var(--gray-400)', fontSize: 13, transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#DC2626'; e.currentTarget.style.borderColor = '#FCA5A5' }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--gray-400)'; e.currentTarget.style.borderColor = 'var(--gray-200)' }}
-            >🗑️</button>
-          </div>
+          {isEditor && (
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                onClick={() => { setEditName(member.name); setEditing(true) }}
+                title="Editar nombre"
+                style={{
+                  width: 26, height: 26, borderRadius: 6, border: '1px solid var(--gray-200)',
+                  background: 'white', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--gray-400)', fontSize: 13, transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#EFF6FF'; e.currentTarget.style.color = '#3B82F6'; e.currentTarget.style.borderColor = '#BFDBFE' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--gray-400)'; e.currentTarget.style.borderColor = 'var(--gray-200)' }}
+              >✏️</button>
+              <button
+                onClick={() => onDelete(member.id, member.name)}
+                title="Eliminar"
+                style={{
+                  width: 26, height: 26, borderRadius: 6, border: '1px solid var(--gray-200)',
+                  background: 'white', cursor: 'pointer', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center',
+                  color: 'var(--gray-400)', fontSize: 13, transition: 'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#FEF2F2'; e.currentTarget.style.color = '#DC2626'; e.currentTarget.style.borderColor = '#FCA5A5' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--gray-400)'; e.currentTarget.style.borderColor = 'var(--gray-200)' }}
+              >🗑️</button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -378,7 +380,7 @@ function MemberCard({ member, obras, onEdit, onDelete }) {
   )
 }
 
-function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDeleteMember }) {
+function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDeleteMember, isEditor }) {
   const [deleteTarget, setDeleteTarget] = useState(null) // { id, name }
   const [addModal, setAddModal] = useState(null) // category string
 
@@ -415,21 +417,23 @@ function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDelete
             {totalPersonas} {totalPersonas === 1 ? 'persona' : 'personas'} · {totalObras} obras en total
           </p>
         </div>
-        <button
-          onClick={() => setAddModal('OBRA')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            padding: '10px 18px', borderRadius: 9, border: 'none',
-            background: '#F97316', color: 'white', cursor: 'pointer',
-            fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
-            boxShadow: '0 2px 8px rgba(249,115,22,0.3)',
-            transition: 'opacity 0.15s',
-          }}
-          onMouseEnter={e => { e.currentTarget.style.opacity = '0.88' }}
-          onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
-        >
-          <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Agregar persona
-        </button>
+        {isEditor && (
+          <button
+            onClick={() => setAddModal('OBRA')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '10px 18px', borderRadius: 9, border: 'none',
+              background: '#F97316', color: 'white', cursor: 'pointer',
+              fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
+              boxShadow: '0 2px 8px rgba(249,115,22,0.3)',
+              transition: 'opacity 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = '0.88' }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+          >
+            <span style={{ fontSize: 17, lineHeight: 1 }}>+</span> Agregar persona
+          </button>
+        )}
       </div>
 
       {/* Summary bar */}
@@ -511,21 +515,23 @@ function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDelete
                   {members.length} {members.length === 1 ? 'persona' : 'personas'}
                 </span>
               </div>
-              <button
-                onClick={() => setAddModal(cat)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  padding: '6px 14px', borderRadius: 8,
-                  border: `1px solid ${meta.border}`,
-                  background: meta.bg, color: meta.color,
-                  cursor: 'pointer', fontWeight: 700, fontSize: 12,
-                  fontFamily: 'inherit', transition: 'opacity 0.15s',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.opacity = '0.75' }}
-                onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
-              >
-                + Agregar
-              </button>
+              {isEditor && (
+                <button
+                  onClick={() => setAddModal(cat)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    padding: '6px 14px', borderRadius: 8,
+                    border: `1px solid ${meta.border}`,
+                    background: meta.bg, color: meta.color,
+                    cursor: 'pointer', fontWeight: 700, fontSize: 12,
+                    fontFamily: 'inherit', transition: 'opacity 0.15s',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.opacity = '0.75' }}
+                  onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+                >
+                  + Agregar
+                </button>
+              )}
             </div>
 
             {members.length === 0 ? (
@@ -534,13 +540,18 @@ function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDelete
                 padding: '28px 20px', textAlign: 'center',
                 color: 'var(--gray-400)', fontSize: 13,
               }}>
-                No hay personas en esta categoría.{' '}
-                <span
-                  style={{ color: meta.color, cursor: 'pointer', fontWeight: 600 }}
-                  onClick={() => setAddModal(cat)}
-                >
-                  Agregar una
-                </span>
+                No hay personas en esta categoría.
+                {isEditor && (
+                  <>
+                    {' '}
+                    <span
+                      style={{ color: meta.color, cursor: 'pointer', fontWeight: 600 }}
+                      onClick={() => setAddModal(cat)}
+                    >
+                      Agregar una
+                    </span>
+                  </>
+                )}
               </div>
             ) : (
               <div style={{
@@ -555,6 +566,7 @@ function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDelete
                     obras={obrasByMember(member.name)}
                     onEdit={onEditMember}
                     onDelete={handleDeleteClick}
+                    isEditor={isEditor}
                   />
                 ))}
               </div>

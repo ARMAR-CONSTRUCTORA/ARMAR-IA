@@ -8,12 +8,15 @@ import ProjectModal from './components/ProjectModal'
 import ConfigPage from './components/ConfigPage'
 import CronogramasPage from './components/CronogramasPage'
 import EquipoPage from './components/EquipoPage'
+import LoginModal from './components/LoginModal'
 import {
   supabase,
   loadProjects, upsertProject, deleteProject,
   loadCronogramasAll, upsertCronograma, deleteCronograma,
   loadTeamMembers, upsertTeamMember, deleteTeamMember,
 } from './lib/supabase'
+
+const SESSION_KEY = 'armar-ia-user'
 
 const PAGE_TITLES = {
   dashboard:     'Dashboard',
@@ -43,6 +46,16 @@ function App() {
   const [projects, setProjects]   = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [cronogramas, setCronogramas] = useState({})
+
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      return raw ? JSON.parse(raw) : null
+    } catch { return null }
+  })
+  const [loginModalOpen, setLoginModalOpen] = useState(false)
+
+  const isEditor = currentUser !== null
 
   const [activePage, setActivePage]   = useState('dashboard')
   const [menuOpen, setMenuOpen]       = useState(false)
@@ -97,6 +110,18 @@ function App() {
     document.body.style.overflow = (!isDesktop && menuOpen) || modalOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [menuOpen, modalOpen, isDesktop])
+
+  // ── Auth ────────────────────────────────────────────────────────────────────
+  const handleLogin = (user) => {
+    setCurrentUser(user)
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(user))
+    setLoginModalOpen(false)
+  }
+
+  const handleLogout = () => {
+    setCurrentUser(null)
+    sessionStorage.removeItem(SESSION_KEY)
+  }
 
   // ── Navegación y modal ──────────────────────────────────────────────────────
   const openAdd    = () => { setEditing(null); setModalOpen(true) }
@@ -244,7 +269,7 @@ function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} />
+        return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} isEditor={isEditor} />
       case 'obras':
         return <ProjectList
           projects={projects}
@@ -259,6 +284,7 @@ function App() {
           onCargarAvance={handleCargarAvance}
           onDeleteCronograma={handleDeleteCronograma}
           onEditarInforme={handleEditarInforme}
+          isEditor={isEditor}
         />
       case 'cronogramas':
         return <CronogramasPage projects={projects} />
@@ -269,6 +295,7 @@ function App() {
           onAddMember={handleAddMember}
           onEditMember={handleEditMember}
           onDeleteMember={handleDeleteMember}
+          isEditor={isEditor}
         />
       case 'configuracion':
         return <ConfigPage />
@@ -285,6 +312,9 @@ function App() {
         isOpen={menuOpen}
         onClose={() => setMenuOpen(false)}
         isDesktop={isDesktop}
+        currentUser={currentUser}
+        onLoginClick={() => setLoginModalOpen(true)}
+        onLogout={handleLogout}
       />
 
       <div style={{
@@ -313,8 +343,12 @@ function App() {
         </main>
       </div>
 
-      {modalOpen && (
+      {modalOpen && isEditor && (
         <ProjectModal project={editingProject} teamMembers={teamMembers} onSave={handleSave} onClose={closeModal} />
+      )}
+
+      {loginModalOpen && (
+        <LoginModal onLogin={handleLogin} onClose={() => setLoginModalOpen(false)} />
       )}
 
       {deleteTarget !== null && (

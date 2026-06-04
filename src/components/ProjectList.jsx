@@ -63,7 +63,7 @@ function Avatar({ name }) {
 }
 
 // ── Fila expandible ───────────────────────────────────────────────────────────
-function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isDesktop, teamMembers }) {
+function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isDesktop, teamMembers, isEditor }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -162,28 +162,30 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
           )}
 
           {/* Acciones */}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
-            <button
-              onClick={(e) => { e.stopPropagation(); onEdit(p) }}
-              style={{
-                padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                border: '1px solid var(--gray-200)', background: 'white',
-                color: 'var(--gray-700)', cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              ✏️ Editar
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onDelete(p.id) }}
-              style={{
-                padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                border: '1px solid #FECACA', background: '#FFF5F5',
-                color: 'var(--red)', cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              🗑 Eliminar
-            </button>
-          </div>
+          {isEditor && (
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(p) }}
+                style={{
+                  padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                  border: '1px solid var(--gray-200)', background: 'white',
+                  color: 'var(--gray-700)', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                ✏️ Editar
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(p.id) }}
+                style={{
+                  padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
+                  border: '1px solid #FECACA', background: '#FFF5F5',
+                  color: 'var(--red)', cursor: 'pointer', fontFamily: 'inherit',
+                }}
+              >
+                🗑 Eliminar
+              </button>
+            </div>
+          )}
 
           {/* Cronograma */}
           <CronogramaTab
@@ -195,6 +197,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
             onCargarAvance={onCargarAvance}
             onDeleteCronograma={onDeleteCronograma}
             onEditarInforme={onEditarInforme}
+            isEditor={isEditor}
           />
         </div>
       )}
@@ -203,7 +206,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-export default function ProjectList({ projects, cronogramas, teamMembers, onAdd, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme }) {
+export default function ProjectList({ projects, cronogramas, teamMembers, onAdd, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor }) {
   const { isMobile, isDesktop } = useBreakpoint()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('todas')
@@ -253,17 +256,19 @@ export default function ProjectList({ projects, cronogramas, teamMembers, onAdd,
                 {filtered.length}
               </span>
             </div>
-            <button
-              onClick={onAdd}
-              style={{
-                background: 'var(--orange)', color: 'white', border: 'none',
-                borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700,
-                cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
-                boxShadow: '0 2px 6px rgba(249,115,22,0.4)',
-              }}
-            >
-              + Nueva Obra
-            </button>
+            {isEditor && (
+              <button
+                onClick={onAdd}
+                style={{
+                  background: 'var(--orange)', color: 'white', border: 'none',
+                  borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700,
+                  cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+                  boxShadow: '0 2px 6px rgba(249,115,22,0.4)',
+                }}
+              >
+                + Nueva Obra
+              </button>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -334,6 +339,7 @@ export default function ProjectList({ projects, cronogramas, teamMembers, onAdd,
             onEditarInforme={onEditarInforme}
             isDesktop={isDesktop}
             teamMembers={teamMembers}
+            isEditor={isEditor}
           />
         ))}
       </div>

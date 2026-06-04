@@ -46,7 +46,7 @@ function MiniBar({ value }) {
   )
 }
 
-function Dashboard({ projects, onAdd, onNavigateToObras }) {
+function Dashboard({ projects, onAdd, onNavigateToObras, isEditor }) {
   const { isMobile, isTablet } = useBreakpoint()
   const compact = isMobile || isTablet
 
@@ -90,17 +90,19 @@ function Dashboard({ projects, onAdd, onNavigateToObras }) {
             {todayStr}
           </p>
         </div>
-        <button
-          onClick={onAdd}
-          style={{
-            background: 'var(--orange)', color: 'white', border: 'none',
-            borderRadius: 9, padding: '10px 20px', fontSize: 13, fontWeight: 700,
-            cursor: 'pointer', boxShadow: '0 3px 10px rgba(249,115,22,0.4)',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          + Nueva Obra
-        </button>
+        {isEditor && (
+          <button
+            onClick={onAdd}
+            style={{
+              background: 'var(--orange)', color: 'white', border: 'none',
+              borderRadius: 9, padding: '10px 20px', fontSize: 13, fontWeight: 700,
+              cursor: 'pointer', boxShadow: '0 3px 10px rgba(249,115,22,0.4)',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            + Nueva Obra
+          </button>
+        )}
       </div>
 
       {/* KPI cards — 2 cols on mobile/tablet, 4 on desktop */}
