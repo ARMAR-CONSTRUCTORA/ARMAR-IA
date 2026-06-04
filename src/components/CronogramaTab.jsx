@@ -280,7 +280,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
 
   return (
     <div ref={scrollRef} style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: 12, border: '1px solid var(--gray-200)', background: 'white' }}>
-      <div style={{ minWidth: TABLE_W + timelineW + (structuralMode ? 32 : 0) }}>
+      <div data-gantt-content style={{ minWidth: TABLE_W + timelineW + (structuralMode ? 32 : 0) }}>
         <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: '2px solid var(--gray-200)', position: 'sticky', top: 0, zIndex: 10 }}>
           {[
             { label: 'Etapa / Tarea', w: COL_NOMBRE, sticky: true },
@@ -870,6 +870,8 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const [showDeleteModal, setShowDeleteModal]  = useState(false)
   const [cascadeData,     setCascadeData]      = useState(null)
   const [zoomIdx,         setZoomIdx]          = useState(1)
+  const [exportando,      setExportando]       = useState(false)
+  const ganttRef = useRef(null)
 
   const ppd       = PPD_LEVELS[zoomIdx].val
   const zoomLabel = PPD_LEVELS[zoomIdx].label
@@ -975,6 +977,101 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     onEditarInforme(project.id, cronograma.id, updatedInforme.id, updatedInforme, tareasActualizadas)
   }
 
+  const exportarPDF = async () => {
+    setExportando(true)
+    try {
+      const { jsPDF } = await import('jspdf')
+      const html2canvas = (await import('html2canvas')).default
+
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const mg = 14
+      let y = mg
+
+      // ── Encabezado ──
+      pdf.setFontSize(15)
+      pdf.setFont('helvetica', 'bold')
+      pdf.text(project.name || '—', mg, y)
+      y += 7
+
+      pdf.setFontSize(9)
+      pdf.setFont('helvetica', 'normal')
+      const col2 = pageW / 2
+      pdf.text(`Ubicación: ${project.location || '—'}`, mg, y)
+      pdf.text(`Responsable: ${project.responsible || '—'}`, col2, y)
+      y += 5
+      pdf.text(`Inicio: ${fmtLong(project.startDate)}`, mg, y)
+      pdf.text(`Fin estimado: ${fmtLong(project.endDate)}`, col2, y)
+      y += 5
+      pdf.text(`Estado: ${project.status || '—'}`, mg, y)
+      pdf.text(`Avance actual: ${avanceGeneral}%`, col2, y)
+      y += 5
+
+      pdf.setDrawColor(220, 220, 220)
+      pdf.line(mg, y, pageW - mg, y)
+      y += 5
+
+      // ── Tabla Gantt ──
+      const contentEl = ganttRef.current?.querySelector('[data-gantt-content]')
+      if (contentEl) {
+        const canvas = await html2canvas(contentEl, {
+          scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false,
+        })
+        const imgW = pageW - mg * 2
+        const imgH = Math.min(pageH - y - mg, (canvas.height * imgW) / canvas.width)
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', mg, y, imgW, imgH)
+        y += imgH + 6
+      }
+
+      // ── Historial de informes ──
+      if (informes.length > 0) {
+        const sorted = [...informes].sort((a, b) => b.numero - a.numero)
+        if (y + 14 > pageH - mg) { pdf.addPage(); y = mg }
+
+        pdf.setFontSize(11)
+        pdf.setFont('helvetica', 'bold')
+        pdf.text('Historial de Informes', mg, y)
+        y += 7
+
+        const lh = 4.5
+        sorted.forEach(inf => {
+          const obsLines = inf.observaciones
+            ? pdf.splitTextToSize(`Observaciones: ${inf.observaciones}`, pageW - mg * 2 - 8)
+            : []
+          const needed = lh * (2 + obsLines.length) + 4
+          if (y + needed > pageH - mg) { pdf.addPage(); y = mg }
+
+          pdf.setFontSize(9)
+          pdf.setFont('helvetica', 'bold')
+          pdf.text(
+            `Informe #${inf.numero}  —  ${fmtLong(inf.fecha)}  |  Responsable: ${inf.responsable || '—'}`,
+            mg, y
+          )
+          y += lh
+
+          pdf.setFont('helvetica', 'normal')
+          const avAnt = inf.avanceGeneralAnterior !== undefined ? `${inf.avanceGeneralAnterior}%` : '—'
+          pdf.text(`Avance general: ${avAnt} → ${inf.avanceGeneral}%`, mg + 4, y)
+          y += lh
+
+          if (obsLines.length) {
+            pdf.text(obsLines, mg + 4, y)
+            y += obsLines.length * lh
+          }
+          y += 4
+        })
+      }
+
+      const safeName = (project.name || 'obra').replace(/[^\w\s]/g, '').trim()
+      pdf.save(`Cronograma_${safeName}.pdf`)
+    } catch (err) {
+      console.error('Error exportando PDF:', err)
+    } finally {
+      setExportando(false)
+    }
+  }
+
   const btnStyle = (orange = false, danger = false) => ({
     padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700,
     cursor: 'pointer', fontFamily: 'inherit',
@@ -1028,6 +1125,9 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
               <button onClick={() => setShowCrearModal(true)} style={btnStyle()}>📋 Usar plantilla</button>
               <button onClick={() => setStructuralMode(true)} style={btnStyle()}>✏️ Editar estructura</button>
               <button onClick={() => setShowAvanceModal(true)} style={btnStyle(true)}>+ Cargar avance</button>
+              <button onClick={exportarPDF} disabled={exportando} style={{ ...btnStyle(), opacity: exportando ? 0.6 : 1 }}>
+                {exportando ? 'Exportando…' : '⬇ Exportar PDF'}
+              </button>
               <button onClick={() => setShowDeleteModal(true)} style={btnStyle(false, true)}>🗑 Eliminar cronograma</button>
             </>
           )
@@ -1041,7 +1141,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
       {/* ── Contenido principal ── */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div ref={ganttRef} style={{ flex: 1, minWidth: 0 }}>
           <TablaGantt
             tareas={tareas}
             structuralMode={structuralMode}
