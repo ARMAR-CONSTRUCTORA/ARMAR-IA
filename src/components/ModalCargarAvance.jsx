@@ -23,7 +23,31 @@ function MiniBar({ value, color }) {
   )
 }
 
-export default function ModalCargarAvance({ project, cronograma, numero, onGuardar, onClose }) {
+const CATEGORIES = ['OBRA', 'PROYECTO', 'GREMIOS']
+
+function TeamSelect({ value, onChange, teamMembers }) {
+  const members = teamMembers || []
+  return (
+    <select
+      value={value}
+      onChange={onChange}
+      style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--gray-200)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', cursor: 'pointer', color: value ? 'var(--gray-800)' : 'var(--gray-400)' }}
+    >
+      <option value="">Seleccionar…</option>
+      {CATEGORIES.map(cat => {
+        const group = members.filter(m => m.category === cat)
+        if (!group.length) return null
+        return (
+          <optgroup key={cat} label={cat}>
+            {group.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+          </optgroup>
+        )
+      })}
+    </select>
+  )
+}
+
+export default function ModalCargarAvance({ project, cronograma, numero, teamMembers, onGuardar, onClose }) {
   const [fecha, setFecha] = useState(today)
   const [responsable, setResponsable] = useState(project.responsible || '')
   const [inputValues, setInputValues] = useState({})  // tareaId → cargar ahora %
@@ -166,10 +190,7 @@ export default function ModalCargarAvance({ project, cronograma, numero, onGuard
             </div>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Responsable</label>
-              <input value={responsable} onChange={e => setResponsable(e.target.value)}
-                placeholder="Nombre…"
-                style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--gray-200)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
-              />
+              <TeamSelect value={responsable} onChange={e => setResponsable(e.target.value)} teamMembers={teamMembers} />
             </div>
           </div>
 

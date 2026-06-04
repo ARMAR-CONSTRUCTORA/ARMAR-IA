@@ -321,24 +321,76 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
           </div>
           {structuralMode && <div style={{ width: 32, background: '#F3F4F6' }} />}
         </div>
-        {etapas.map(etapa => {
-          const hijos = tareas.filter(t => t.parentId === etapa.id)
-          const isExpanded = expandedEtapas.has(etapa.id)
-          return (
-            <div key={etapa.id}>
-              {renderRow(etapa, false)}
-              {isExpanded && hijos.map(hijo => renderRow(hijo, true))}
-              {isExpanded && structuralMode && (
-                <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 44, height: 30, borderBottom: '1px solid var(--gray-200)', background: 'white' }}>
-                  <button onClick={() => onAddSubtarea(etapa)}
-                    style={{ fontSize: 11, color: 'var(--orange)', fontWeight: 700, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
-                    + Nueva subetapa
-                  </button>
-                </div>
-              )}
-            </div>
-          )
-        })}
+        {/* Rows + SVG connector overlay */}
+        <div style={{ position: 'relative' }}>
+          {etapas.map(etapa => {
+            const hijos = tareas.filter(t => t.parentId === etapa.id)
+            const isExpanded = expandedEtapas.has(etapa.id)
+            return (
+              <div key={etapa.id}>
+                {renderRow(etapa, false)}
+                {isExpanded && hijos.map(hijo => renderRow(hijo, true))}
+                {isExpanded && structuralMode && (
+                  <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 44, height: 30, borderBottom: '1px solid var(--gray-200)', background: 'white' }}>
+                    <button onClick={() => onAddSubtarea(etapa)}
+                      style={{ fontSize: 11, color: 'var(--orange)', fontWeight: 700, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+                      + Nueva subetapa
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {/* SVG dependency connectors */}
+          {(() => {
+            // Build flat ordered list of visible rows
+            const visibleRows = []
+            etapas.forEach(etapa => {
+              visibleRows.push(etapa)
+              if (expandedEtapas.has(etapa.id)) {
+                tareas.filter(t => t.parentId === etapa.id).forEach(h => visibleRows.push(h))
+              }
+            })
+            const rowIdx = {}
+            visibleRows.forEach((t, i) => { rowIdx[t.id] = i })
+
+            const arrows = tareas.filter(t => t.dependeDeId && rowIdx[t.id] !== undefined && rowIdx[t.dependeDeId] !== undefined)
+            if (!arrows.length) return null
+
+            const svgH = visibleRows.length * ROW_H
+            return (
+              <svg
+                style={{ position: 'absolute', top: 0, left: TABLE_W, pointerEvents: 'none', overflow: 'visible', zIndex: 5 }}
+                width={timelineW} height={svgH}
+              >
+                {arrows.map(dep => {
+                  const pred = tareas.find(t => t.id === dep.dependeDeId)
+                  if (!pred) return null
+                  const predRow = rowIdx[pred.id]
+                  const depRow  = rowIdx[dep.id]
+                  const x1 = toPx(pred.fechaFin) + ppd          // right edge of pred bar
+                  const x2 = toPx(dep.fechaInicio)              // left edge of dep bar
+                  const y1 = predRow * ROW_H + ROW_H / 2
+                  const y2 = depRow  * ROW_H + ROW_H / 2
+                  const elbow = 10
+                  // path: right → down/up → left → arrowhead
+                  const path = `M ${x1} ${y1} L ${x1 + elbow} ${y1} L ${x1 + elbow} ${y2} L ${x2} ${y2}`
+                  return (
+                    <g key={`${pred.id}-${dep.id}`}>
+                      <path d={path} fill="none" stroke="#F97316" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.7} />
+                      {/* arrowhead */}
+                      <polygon
+                        points={`${x2},${y2} ${x2 - 7},${y2 - 4} ${x2 - 7},${y2 + 4}`}
+                        fill="#F97316" opacity={0.7}
+                      />
+                    </g>
+                  )
+                })}
+              </svg>
+            )
+          })()}
+        </div>
       </div>
     </div>
   )
@@ -1008,6 +1060,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       {showAvanceModal && (
         <ModalCargarAvance project={project} cronograma={cronograma}
           numero={informes.length + 1}
+          teamMembers={teamMembers}
           onClose={() => setShowAvanceModal(false)}
           onGuardar={(pid, informe, tareasActualizadas) => {
             onCargarAvance(pid, cronograma.id, informe, tareasActualizadas)

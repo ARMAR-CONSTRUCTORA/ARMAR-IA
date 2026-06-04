@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { calcFechaFin, calcDuracionHabil } from '../utils/calendarUtils'
-
-const TIPOS_VINCULO = ['Fin a inicio', 'Inicio a inicio']
+import { calcFechaFin, addBusinessDays } from '../utils/calendarUtils'
 
 function fmtLong(d) {
   if (!d) return '—'
@@ -41,6 +39,12 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
     desfaseDias:  String(tarea?.desfaseDias ?? 0),
   })
 
+  const calcFechaInicioDesde = (predId, desfase) => {
+    const pred = tareas.find(t => t.id === Number(predId))
+    if (!pred?.fechaFin) return form.fechaInicio
+    return addBusinessDays(pred.fechaFin, 1 + Number(desfase || 0))
+  }
+
   const fechaFin = form.fechaInicio && Number(form.duracionDias) > 0
     ? calcFechaFin(form.fechaInicio, Number(form.duracionDias))
     : ''
@@ -53,6 +57,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
       ...tarea,
       ...form,
       fechaFin,
+      tipoVinculo:   'Fin a inicio',
       duracionDias:  Number(form.duracionDias),
       pesoRelativo:  Number(form.pesoRelativo),
       desfaseDias:   Number(form.desfaseDias),
@@ -121,7 +126,11 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
             <Field label="Predecesora">
               <select style={inputStyle}
                 value={form.dependeDeId ?? ''}
-                onChange={e => setForm(f => ({ ...f, dependeDeId: e.target.value ? Number(e.target.value) : null }))}>
+                onChange={e => {
+                  const predId = e.target.value ? Number(e.target.value) : null
+                  const newFI = predId ? calcFechaInicioDesde(predId, form.desfaseDias) : form.fechaInicio
+                  setForm(f => ({ ...f, dependeDeId: predId, fechaInicio: newFI }))
+                }}>
                 <option value="">Ninguna</option>
                 {opcionesPredecesora.map(t => (
                   <option key={t.id} value={t.id}>
@@ -132,18 +141,14 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
             </Field>
 
             {form.dependeDeId && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <Field label="Tipo de vínculo">
-                  <select style={inputStyle} value={form.tipoVinculo}
-                    onChange={e => setForm(f => ({ ...f, tipoVinculo: e.target.value }))}>
-                    {TIPOS_VINCULO.map(tv => <option key={tv} value={tv}>{tv}</option>)}
-                  </select>
-                </Field>
-                <Field label="Días de desfase" hint="Días hábiles de lag">
-                  <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
-                    onChange={e => setForm(f => ({ ...f, desfaseDias: e.target.value }))} />
-                </Field>
-              </div>
+              <Field label="Días de desfase" hint="Días hábiles — se suman al fin de la predecesora">
+                <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
+                  onChange={e => {
+                    const desfase = e.target.value
+                    const newFI = calcFechaInicioDesde(form.dependeDeId, desfase)
+                    setForm(f => ({ ...f, desfaseDias: desfase, fechaInicio: newFI }))
+                  }} />
+              </Field>
             )}
           </div>
         </div>
