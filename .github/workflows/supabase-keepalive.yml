@@ -1,0 +1,17 @@
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '0 8 */3 * *'  # cada 3 días a las 08:00 UTC
+  workflow_dispatch:        # permite ejecutarlo manualmente desde GitHub
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase
+        run: |
+          curl -sf \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            "https://sljsruoswqqvtnpxfymr.supabase.co/rest/v1/projects?select=id&limit=1" \
+          && echo "Ping OK" || echo "Ping failed (proyecto posiblemente pausado)"
