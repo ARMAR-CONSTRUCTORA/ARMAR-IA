@@ -13,6 +13,7 @@ import { sampleProjects } from './data/sampleData'
 
 const STORAGE_KEY  = 'armar-ia-projects'
 const CRON_KEY     = 'armar-ia-cronogramas'
+const TEAM_KEY     = 'armar-ia-team'
 
 const PAGE_TITLES = {
   dashboard:     'Dashboard',
@@ -32,6 +33,21 @@ function App() {
       return saved ? JSON.parse(saved) : sampleProjects
     } catch {
       return sampleProjects
+    }
+  })
+
+  const [teamMembers, setTeamMembers] = useState(() => {
+    try {
+      const saved = localStorage.getItem(TEAM_KEY)
+      if (saved) return JSON.parse(saved)
+      // Migrar responsables existentes como categoría OBRA
+      const savedProjects = localStorage.getItem(STORAGE_KEY)
+      const projs = savedProjects ? JSON.parse(savedProjects) : sampleProjects
+      const names = [...new Set(projs.map(p => p.responsible).filter(Boolean))]
+      return names.map((name, i) => ({ id: `m-${i}`, name, category: 'OBRA' }))
+    } catch {
+      const names = [...new Set(sampleProjects.map(p => p.responsible).filter(Boolean))]
+      return names.map((name, i) => ({ id: `m-${i}`, name, category: 'OBRA' }))
     }
   })
 
@@ -62,6 +78,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
   }, [projects])
+
+  useEffect(() => {
+    localStorage.setItem(TEAM_KEY, JSON.stringify(teamMembers))
+  }, [teamMembers])
 
   useEffect(() => {
     localStorage.setItem(CRON_KEY, JSON.stringify(cronogramas))
@@ -159,6 +179,19 @@ function App() {
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
   }
 
+  const handleAddMember = (name, category) => {
+    const id = `m-${Date.now()}`
+    setTeamMembers(prev => [...prev, { id, name, category }])
+  }
+
+  const handleEditMember = (id, name) => {
+    setTeamMembers(prev => prev.map(m => m.id === id ? { ...m, name } : m))
+  }
+
+  const handleDeleteMember = (id) => {
+    setTeamMembers(prev => prev.filter(m => m.id !== id))
+  }
+
   const handleUpdateTasks = (projectId, updatedTasks) => {
     const avg = updatedTasks.length
       ? Math.round(updatedTasks.reduce((s, t) => s + t.progress, 0) / updatedTasks.length)
@@ -176,6 +209,7 @@ function App() {
         return <ProjectList
           projects={projects}
           cronogramas={cronogramas}
+          teamMembers={teamMembers}
           onAdd={openAdd}
           onEdit={openEdit}
           onDelete={setDeleteTarget}
@@ -189,7 +223,13 @@ function App() {
       case 'cronogramas':
         return <CronogramasPage projects={projects} />
       case 'equipo':
-        return <EquipoPage projects={projects} />
+        return <EquipoPage
+          projects={projects}
+          teamMembers={teamMembers}
+          onAddMember={handleAddMember}
+          onEditMember={handleEditMember}
+          onDeleteMember={handleDeleteMember}
+        />
       case 'documentos':
         return <DocumentosPage projects={projects} />
       case 'configuracion':

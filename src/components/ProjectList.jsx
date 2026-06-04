@@ -63,7 +63,7 @@ function Avatar({ name }) {
 }
 
 // ── Fila expandible ───────────────────────────────────────────────────────────
-function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isDesktop }) {
+function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isDesktop, teamMembers }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -189,6 +189,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
           <CronogramaTab
             project={p}
             cronogramas={cronograma || []}
+            teamMembers={teamMembers}
             onCreateCronograma={onCreateCronograma}
             onSaveCronograma={onSaveCronograma}
             onCargarAvance={onCargarAvance}
@@ -202,7 +203,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-export default function ProjectList({ projects, cronogramas, onAdd, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme }) {
+export default function ProjectList({ projects, cronogramas, teamMembers, onAdd, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme }) {
   const { isMobile, isDesktop } = useBreakpoint()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('todas')
@@ -332,6 +333,7 @@ export default function ProjectList({ projects, cronogramas, onAdd, onEdit, onDe
             onDeleteCronograma={onDeleteCronograma}
             onEditarInforme={onEditarInforme}
             isDesktop={isDesktop}
+            teamMembers={teamMembers}
           />
         ))}
       </div>

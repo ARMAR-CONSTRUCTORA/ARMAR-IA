@@ -3,7 +3,12 @@
     "allow": [
       "Bash(npm install *)",
       "Bash(Start-Sleep -Seconds 20)",
-      "Bash(Get-Content \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Usuario-Desktop-ARMAR-IA\\\\89135b1b-ce5a-4275-8942-01197743c65c\\\\tasks\\\\b2htaftyv.output\")"
+      "Bash(Get-Content \"C:\\\\Users\\\\Usuario\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Usuario-Desktop-ARMAR-IA\\\\89135b1b-ce5a-4275-8942-01197743c65c\\\\tasks\\\\b2htaftyv.output\")",
+      "Bash(git init *)",
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }

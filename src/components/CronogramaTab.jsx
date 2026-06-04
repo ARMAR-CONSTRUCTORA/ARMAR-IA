@@ -802,7 +802,7 @@ function ModalImpacto({ data, onApply, onDismiss }) {
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-export default function CronogramaTab({ project, cronogramas, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme }) {
+export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme }) {
   const [selectedId,      setSelectedId]      = useState(() => cronogramas[0]?.id || null)
   const [showCrearModal,  setShowCrearModal]   = useState(false)
   const [showAvanceModal, setShowAvanceModal]  = useState(false)
@@ -831,7 +831,7 @@ export default function CronogramaTab({ project, cronogramas, onCreateCronograma
       <>
         <EmptyState onCrear={() => setShowCrearModal(true)} />
         {showCrearModal && (
-          <ModalCrearCronograma project={project} onClose={() => setShowCrearModal(false)}
+          <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)}
             onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />
         )}
       </>
