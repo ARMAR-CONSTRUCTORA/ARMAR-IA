@@ -1026,7 +1026,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         scrollContainer.style.overflowX = 'visible'
 
         const canvas = await html2canvas(contentEl, {
-          scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false,
+          scale: 1.2, useCORS: true, backgroundColor: '#ffffff', logging: false,
           width: fullWidth, windowWidth: fullWidth,
         })
 
@@ -1034,7 +1034,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
         const imgW = pageW - mg * 2
         const imgH = Math.min(pageH - y - mg, (canvas.height * imgW) / canvas.width)
-        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', mg, y, imgW, imgH)
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.7), 'JPEG', mg, y, imgW, imgH)
         y += imgH + 6
       }
 
@@ -1066,7 +1066,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
           pdf.setFont('helvetica', 'normal')
           const avAnt = inf.avanceGeneralAnterior !== undefined ? `${inf.avanceGeneralAnterior}%` : '—'
-          pdf.text(`Avance general: ${avAnt} → ${inf.avanceGeneral}%`, mg + 4, y)
+          pdf.text(`Avance general: ${avAnt} -> ${inf.avanceGeneral}%`, mg + 4, y)
           y += lh
 
           if (obsLines.length) {
