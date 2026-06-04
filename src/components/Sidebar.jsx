@@ -63,6 +63,7 @@ function NavItems({ activePage, onNavigate }) {
 }
 
 function SidebarContent({ activePage, onNavigate, onClose, showClose }) {
+  // onNavigate ya está disponible para el logo
   return (
     <>
       {/* Logo header */}
@@ -71,13 +72,18 @@ function SidebarContent({ activePage, onNavigate, onClose, showClose }) {
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div
+          onClick={() => onNavigate('dashboard')}
+          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', borderRadius: 10, padding: '4px 6px', transition: 'background 0.15s' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#FFF7ED' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
+        >
           <img
             src="/LOGO CON BLANCO PERIMETRAL.jpg"
             alt="ARMAR"
-            style={{ height: 44, width: 'auto', flexShrink: 0 }}
+            style={{ height: 76, width: 'auto', flexShrink: 0 }}
           />
-          <span style={{ fontWeight: 800, fontSize: 20, color: 'var(--gray-900)', letterSpacing: '-0.3px' }}>
+          <span style={{ fontWeight: 800, fontSize: 22, color: 'var(--gray-900)', letterSpacing: '-0.3px' }}>
             ARMAR
           </span>
         </div>

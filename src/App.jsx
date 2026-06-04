@@ -278,7 +278,7 @@ function App() {
 
       {/* Add/Edit modal */}
       {modalOpen && (
-        <ProjectModal project={editingProject} onSave={handleSave} onClose={closeModal} />
+        <ProjectModal project={editingProject} teamMembers={teamMembers} onSave={handleSave} onClose={closeModal} />
       )}
 
       {/* Delete confirmation */}

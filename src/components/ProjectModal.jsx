@@ -2,16 +2,35 @@ import { useState, useEffect } from 'react'
 import { useBreakpoint } from '../hooks/useBreakpoint'
 import LocationAutocomplete from './LocationAutocomplete'
 
+const CATEGORIES = ['OBRA', 'PROYECTO', 'GREMIOS']
+
 const EMPTY = {
-  name:        '',
-  location:    '',
-  startDate:   '',
-  endDate:     '',
-  responsible: '',
-  contratista: '',
-  proyecto:    '',
-  progress:    0,
-  status:      'activa',
+  name:                '',
+  location:            '',
+  startDate:           '',
+  endDate:             '',
+  responsible:         '',
+  responsableProyecto: '',
+  contratista:         '',
+  proyecto:            '',
+  progress:            0,
+  status:              'activa',
+}
+
+function calcEndDate(startDate, valor, unidad) {
+  if (!startDate || !valor || Number(valor) <= 0) return ''
+  const d = new Date(startDate + 'T00:00:00')
+  const n = Number(valor)
+  if (unidad === 'Días')    d.setDate(d.getDate() + n)
+  if (unidad === 'Semanas') d.setDate(d.getDate() + n * 7)
+  if (unidad === 'Meses')   d.setMonth(d.getMonth() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+function fmtDate(str) {
+  if (!str) return '—'
+  const [y, m, d] = str.split('-')
+  return `${d}/${m}/${y}`
 }
 
 function Field({ label, required, error, children }) {
@@ -29,29 +48,84 @@ function Field({ label, required, error, children }) {
   )
 }
 
-export default function ProjectModal({ project, onSave, onClose }) {
+function TeamSelect({ value, onChange, teamMembers, hasError, placeholder }) {
+  const members = teamMembers || []
+  const inputStyle = {
+    width: '100%', padding: '10px 13px', borderRadius: 8,
+    border: `1.5px solid ${hasError ? 'var(--red)' : 'var(--gray-200)'}`,
+    fontSize: 14, color: value ? 'var(--gray-800)' : 'var(--gray-400)',
+    fontFamily: 'inherit', background: 'white', boxSizing: 'border-box', cursor: 'pointer',
+  }
+  return (
+    <select style={inputStyle} value={value} onChange={onChange}>
+      <option value="">{placeholder || 'Seleccionar…'}</option>
+      {CATEGORIES.map(cat => {
+        const group = members.filter(m => m.category === cat)
+        if (!group.length) return null
+        return (
+          <optgroup key={cat} label={cat}>
+            {group.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
+          </optgroup>
+        )
+      })}
+    </select>
+  )
+}
+
+export default function ProjectModal({ project, teamMembers, onSave, onClose }) {
   const { isMobile } = useBreakpoint()
-  const [form, setForm]     = useState(EMPTY)
-  const [errors, setErrors] = useState({})
+  const [form, setForm]             = useState(EMPTY)
+  const [errors, setErrors]         = useState({})
+  const [duracionValor, setDurVal]  = useState('')
+  const [duracionUnidad, setDurUnd] = useState('Días')
 
   useEffect(() => {
-    setForm(project ? {
-      name:        project.name        ?? '',
-      location:    project.location    ?? '',
-      startDate:   project.startDate   ?? '',
-      endDate:     project.endDate     ?? '',
-      responsible: project.responsible ?? '',
-      contratista: project.contratista ?? '',
-      proyecto:    project.proyecto    ?? '',
-      progress:    project.progress    ?? 0,
-      status:      project.status      ?? 'activa',
-    } : EMPTY)
+    if (project) {
+      setForm({
+        name:                project.name                ?? '',
+        location:            project.location            ?? '',
+        startDate:           project.startDate           ?? '',
+        endDate:             project.endDate             ?? '',
+        responsible:         project.responsible         ?? '',
+        responsableProyecto: project.responsableProyecto ?? '',
+        contratista:         project.contratista         ?? '',
+        proyecto:            project.proyecto            ?? '',
+        progress:            project.progress            ?? 0,
+        status:              project.status              ?? 'activa',
+      })
+      setDurVal('')
+      setDurUnd('Días')
+    } else {
+      setForm(EMPTY)
+      setDurVal('')
+      setDurUnd('Días')
+    }
     setErrors({})
   }, [project])
 
   const set = (key, value) => {
     setForm(f => ({ ...f, [key]: value }))
     if (errors[key]) setErrors(e => ({ ...e, [key]: '' }))
+  }
+
+  const handleDurValChange = (val) => {
+    setDurVal(val)
+    const end = calcEndDate(form.startDate, val, duracionUnidad)
+    if (end) set('endDate', end)
+  }
+
+  const handleDurUndChange = (und) => {
+    setDurUnd(und)
+    const end = calcEndDate(form.startDate, duracionValor, und)
+    if (end) set('endDate', end)
+  }
+
+  const handleStartDateChange = (val) => {
+    set('startDate', val)
+    if (duracionValor) {
+      const end = calcEndDate(val, duracionValor, duracionUnidad)
+      if (end) set('endDate', end)
+    }
   }
 
   const validate = () => {
@@ -80,10 +154,6 @@ export default function ProjectModal({ project, onSave, onClose }) {
     background: 'white', boxSizing: 'border-box',
   })
 
-  const progressColor =
-    form.progress === 100 ? '#10B981' : form.progress >= 70 ? '#F97316' :
-    form.progress >= 40   ? '#F59E0B' : '#9CA3AF'
-
   const col2 = isMobile ? '1fr' : '1fr 1fr'
 
   return (
@@ -107,7 +177,6 @@ export default function ProjectModal({ project, onSave, onClose }) {
         overflowY: 'auto',
         boxShadow: '0 25px 80px rgba(0,0,0,0.3)',
       }}>
-        {/* Handle bar móvil */}
         {isMobile && (
           <div style={{
             width: 40, height: 4, background: 'var(--gray-300)',
@@ -156,7 +225,7 @@ export default function ProjectModal({ project, onSave, onClose }) {
             />
           </Field>
 
-          {/* Ubicación con autocompletado */}
+          {/* Ubicación */}
           <Field label="Ubicación" required error={errors.location}>
             <LocationAutocomplete
               value={form.location}
@@ -165,85 +234,100 @@ export default function ProjectModal({ project, onSave, onClose }) {
             />
           </Field>
 
-          {/* Fechas */}
-          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
+          {/* Fecha inicio + Duración + Fecha fin */}
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
             <Field label="Fecha de inicio" required error={errors.startDate}>
               <input
                 type="date" value={form.startDate}
-                onChange={e => set('startDate', e.target.value)}
+                onChange={e => handleStartDateChange(e.target.value)}
                 style={inputStyle(errors.startDate)}
               />
             </Field>
-            <Field label="Fecha de finalización" required error={errors.endDate}>
-              <input
-                type="date" value={form.endDate}
-                onChange={e => set('endDate', e.target.value)}
-                style={inputStyle(errors.endDate)}
-              />
-            </Field>
-          </div>
-
-          {/* Responsable + Contratista */}
-          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
-            <Field label="Responsable en obra" required error={errors.responsible}>
-              <input
-                type="text" value={form.responsible}
-                onChange={e => set('responsible', e.target.value)}
-                style={inputStyle(errors.responsible)}
-                placeholder="Ej: Ing. Carlos Méndez"
-              />
-            </Field>
-            <Field label="Contratista principal">
-              <input
-                type="text" value={form.contratista}
-                onChange={e => set('contratista', e.target.value)}
-                style={inputStyle(false)}
-                placeholder="Ej: Constructora del Sur S.A."
-              />
-            </Field>
-          </div>
-
-          {/* Proyecto */}
-          <Field label="Proyecto">
-            <input
-              type="text" value={form.proyecto}
-              onChange={e => set('proyecto', e.target.value)}
-              style={inputStyle(false)}
-              placeholder="Ej: Plan de Desarrollo Urbano 2024"
-            />
-          </Field>
-
-          {/* Avance + Estado */}
-          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
-            <Field label={`Porcentaje de avance: ${form.progress}%`}>
-              <input
-                type="range" min="0" max="100" value={form.progress}
-                onChange={e => set('progress', e.target.value)}
-                style={{ width: '100%', accentColor: progressColor, marginTop: 8 }}
-              />
-              <div style={{
-                height: 8, background: 'var(--gray-200)', borderRadius: 99,
-                overflow: 'hidden', marginTop: 8,
-              }}>
-                <div style={{
-                  width: `${form.progress}%`, height: '100%',
-                  background: progressColor, borderRadius: 99, transition: 'width 0.2s',
-                }} />
+            <Field label="Duración">
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  type="number" min={1} value={duracionValor}
+                  onChange={e => handleDurValChange(e.target.value)}
+                  placeholder="Ej: 8"
+                  style={{ ...inputStyle(false), flex: 1, minWidth: 0 }}
+                />
+                <select
+                  value={duracionUnidad}
+                  onChange={e => handleDurUndChange(e.target.value)}
+                  style={{ ...inputStyle(false), width: 'auto', minWidth: 80, padding: '10px 8px', cursor: 'pointer' }}
+                >
+                  <option>Días</option>
+                  <option>Semanas</option>
+                  <option>Meses</option>
+                </select>
               </div>
             </Field>
-
-            <Field label="Estado">
-              <select
-                value={form.status}
-                onChange={e => set('status', e.target.value)}
-                style={{ ...inputStyle(false), cursor: 'pointer' }}
-              >
-                <option value="activa">Activa</option>
-                <option value="terminada">Terminada</option>
-                <option value="atrasada">Atrasada</option>
-              </select>
+            <Field label="Fecha de finalización" required error={errors.endDate}>
+              <div style={{
+                ...inputStyle(errors.endDate),
+                background: form.endDate ? 'white' : '#F9FAFB',
+                color: form.endDate ? 'var(--gray-800)' : 'var(--gray-400)',
+                display: 'flex', alignItems: 'center',
+                cursor: 'default', userSelect: 'none',
+              }}>
+                {form.endDate ? fmtDate(form.endDate) : 'Se calcula automático'}
+              </div>
             </Field>
           </div>
+
+          {/* Responsable en obra + Responsable de proyecto */}
+          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
+            <Field label="Responsable en obra" required error={errors.responsible}>
+              <TeamSelect
+                value={form.responsible}
+                onChange={e => set('responsible', e.target.value)}
+                teamMembers={teamMembers}
+                hasError={!!errors.responsible}
+                placeholder="Seleccionar responsable…"
+              />
+            </Field>
+            <Field label="Responsable de proyecto">
+              <TeamSelect
+                value={form.responsableProyecto}
+                onChange={e => set('responsableProyecto', e.target.value)}
+                teamMembers={teamMembers}
+                placeholder="Seleccionar responsable…"
+              />
+            </Field>
+          </div>
+
+          {/* Contratista + Proyecto */}
+          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
+            <Field label="Contratista principal">
+              <TeamSelect
+                value={form.contratista}
+                onChange={e => set('contratista', e.target.value)}
+                teamMembers={teamMembers}
+                placeholder="Seleccionar contratista…"
+              />
+            </Field>
+            <Field label="Proyecto">
+              <input
+                type="text" value={form.proyecto}
+                onChange={e => set('proyecto', e.target.value)}
+                style={inputStyle(false)}
+                placeholder="Ej: Plan de Desarrollo Urbano 2024"
+              />
+            </Field>
+          </div>
+
+          {/* Estado */}
+          <Field label="Estado">
+            <select
+              value={form.status}
+              onChange={e => set('status', e.target.value)}
+              style={{ ...inputStyle(false), cursor: 'pointer' }}
+            >
+              <option value="activa">Activa</option>
+              <option value="terminada">Terminada</option>
+              <option value="atrasada">Atrasada</option>
+            </select>
+          </Field>
 
           {/* Botones */}
           <div style={{
