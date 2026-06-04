@@ -100,15 +100,13 @@ function SidebarContent({ activePage, onNavigate, onClose, showClose, currentUse
         )}
       </div>
 
-      <NavItems activePage={activePage} onNavigate={onNavigate} />
-
-      {/* Auth footer */}
+      {/* Auth — debajo del logo, siempre visible */}
       <div style={{
-        padding: '14px 16px', borderTop: '1px solid var(--gray-200)',
+        padding: '10px 16px', borderBottom: '1px solid var(--gray-200)',
         flexShrink: 0,
       }}>
         {currentUser ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{
               width: 30, height: 30, borderRadius: '50%',
               background: 'var(--orange)', color: 'white',
@@ -142,15 +140,21 @@ function SidebarContent({ activePage, onNavigate, onClose, showClose, currentUse
               color: 'var(--gray-600)', cursor: 'pointer', fontWeight: 700,
               fontSize: 13, fontFamily: 'inherit', display: 'flex',
               alignItems: 'center', justifyContent: 'center', gap: 6,
-              marginBottom: 8,
             }}
           >
             🔐 Iniciar sesión
           </button>
         )}
-        <div style={{ fontSize: 11, color: 'var(--gray-400)', textAlign: 'center' }}>
-          ARMAR · Sistema de Obras · {new Date().getFullYear()}
-        </div>
+      </div>
+
+      <NavItems activePage={activePage} onNavigate={onNavigate} />
+
+      {/* Footer */}
+      <div style={{
+        padding: '10px 16px', borderTop: '1px solid var(--gray-200)',
+        fontSize: 11, color: 'var(--gray-400)', textAlign: 'center', flexShrink: 0,
+      }}>
+        ARMAR · Sistema de Obras · {new Date().getFullYear()}
       </div>
     </>
   )
