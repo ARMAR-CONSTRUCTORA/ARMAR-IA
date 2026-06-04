@@ -278,7 +278,7 @@ function App() {
   }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--gray-100)' }}>
+    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--gray-100)' }}>
       <Sidebar
         activePage={activePage}
         onNavigate={handleNavigate}
@@ -290,7 +290,8 @@ function App() {
       <div style={{
         marginLeft: isDesktop ? 240 : 0,
         flex: 1,
-        minHeight: '100vh',
+        height: '100vh',
+        overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
         maxWidth: isDesktop ? 'calc(100vw - 240px)' : '100vw',
@@ -305,6 +306,7 @@ function App() {
 
         <main style={{
           flex: 1,
+          overflowY: 'auto',
           padding: isMobile ? '20px 16px 40px' : isDesktop ? '40px 40px' : '28px 24px',
         }}>
           {renderPage()}

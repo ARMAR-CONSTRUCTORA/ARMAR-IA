@@ -73,7 +73,7 @@ function TeamSelect({ value, onChange, teamMembers, hasError, placeholder }) {
 }
 
 export default function ProjectModal({ project, teamMembers, onSave, onClose }) {
-  const { isMobile } = useBreakpoint()
+  const { isMobile, isTablet } = useBreakpoint()
   const [form, setForm]             = useState(EMPTY)
   const [errors, setErrors]         = useState({})
   const [duracionValor, setDurVal]  = useState('')
@@ -154,7 +154,7 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
     background: 'white', boxSizing: 'border-box',
   })
 
-  const col2 = isMobile ? '1fr' : '1fr 1fr'
+  const col2 = (isMobile || isTablet) ? '1fr' : '1fr 1fr'
 
   return (
     <div
@@ -235,7 +235,7 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
           </Field>
 
           {/* Fecha inicio + Duración + Fecha fin */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: (isMobile || isTablet) ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
             <Field label="Fecha de inicio" required error={errors.startDate}>
               <input
                 type="date" value={form.startDate}

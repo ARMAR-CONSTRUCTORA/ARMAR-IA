@@ -1,5 +1,6 @@
 import { useState, useRef, useMemo } from 'react'
 import { calcAvanceGeneral, estadoFromAvance } from '../data/cronogramaTemplates'
+import { useBreakpoint } from '../hooks/useBreakpoint'
 
 function fmtDate(d) {
   if (!d) return ''
@@ -48,6 +49,7 @@ function TeamSelect({ value, onChange, teamMembers }) {
 }
 
 export default function ModalCargarAvance({ project, cronograma, numero, teamMembers, onGuardar, onClose }) {
+  const { isMobile, isTablet } = useBreakpoint()
   const [fecha, setFecha] = useState(today)
   const [responsable, setResponsable] = useState(project.responsible || '')
   const [inputValues, setInputValues] = useState({})  // tareaId → cargar ahora %
@@ -181,7 +183,7 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
 
           {/* Fecha + responsable */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: (isMobile || isTablet) ? '1fr' : '1fr 1fr', gap: 14, marginBottom: 20 }}>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Fecha de carga</label>
               <input type="date" value={fecha} onChange={e => setFecha(e.target.value)}

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react'
+import { useBreakpoint } from '../hooks/useBreakpoint'
 import { generarTareasDesdeTemplate } from '../data/cronogramaTemplates'
 import { loadTemplates } from '../data/templateStorage'
 import { calcDuracionHabil, calcFechaFin, addBusinessDays, computeCascade } from '../utils/calendarUtils'
@@ -221,6 +222,7 @@ function TeamSelect({ value, onChange, teamMembers, style }) {
 
 function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, template, mode, teamMembers,
                  scratchEtapas, setScratchEtapas, showMiniModal, setShowMiniModal, miniNombre, setMiniNombre }) {
+  const { isMobile, isTablet } = useBreakpoint()
   const etapas = template?.etapas || []
   const allSelected = etapas.length > 0 && etapas.every(et => etapasIncluidas.includes(et.nombre))
 
@@ -242,7 +244,7 @@ function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, templat
               setParams(p => ({ ...p, fechaInicio: fi, fechaFin: ff }))
             }} />
         </FormField>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: (isMobile || isTablet) ? '1fr' : '1fr 1fr', gap: 12 }}>
           <FormField label="Duración">
             <div style={{ display: 'flex', gap: 6 }}>
               <input type="number" min={1} style={{ ...inputStyle, flex: 1 }}
