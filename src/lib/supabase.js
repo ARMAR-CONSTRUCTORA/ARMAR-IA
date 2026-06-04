@@ -9,33 +9,35 @@ export const supabase = createClient(
 
 function fromDbProject(row) {
   return {
-    id:          row.id,
-    name:        row.name,
-    location:    row.location    || '',
-    startDate:   row.start_date  || '',
-    endDate:     row.end_date    || '',
-    progress:    row.progress    ?? 0,
-    responsible: row.responsible || '',
-    contratista: row.contratista || '',
-    proyecto:    row.proyecto    || '',
-    status:      row.status      || 'activa',
-    tasks:       row.tasks       || [],
+    id:                  row.id,
+    name:                row.name,
+    location:            row.location             || '',
+    startDate:           row.start_date           || '',
+    endDate:             row.end_date             || '',
+    progress:            row.progress             ?? 0,
+    responsible:         row.responsible          || '',
+    responsableProyecto: row.responsable_proyecto || '',
+    contratista:         row.contratista          || '',
+    proyecto:            row.proyecto             || '',
+    status:              row.status               || 'activa',
+    tasks:               row.tasks                || [],
   }
 }
 
 function toDbProject(p) {
   return {
-    id:          p.id,
-    name:        p.name,
-    location:    p.location    ?? null,
-    start_date:  p.startDate   ?? null,
-    end_date:    p.endDate     ?? null,
-    progress:    p.progress    ?? 0,
-    responsible: p.responsible ?? null,
-    contratista: p.contratista ?? null,
-    proyecto:    p.proyecto    ?? null,
-    status:      p.status      || 'activa',
-    tasks:       p.tasks       || [],
+    id:                   p.id,
+    name:                 p.name,
+    location:             p.location             ?? null,
+    start_date:           p.startDate            ?? null,
+    end_date:             p.endDate              ?? null,
+    progress:             p.progress             ?? 0,
+    responsible:          p.responsible          ?? null,
+    responsable_proyecto: p.responsableProyecto  ?? null,
+    contratista:          p.contratista          ?? null,
+    proyecto:             p.proyecto             ?? null,
+    status:               p.status               || 'activa',
+    tasks:                p.tasks                || [],
   }
 }
 

@@ -8,7 +8,6 @@ import ProjectModal from './components/ProjectModal'
 import ConfigPage from './components/ConfigPage'
 import CronogramasPage from './components/CronogramasPage'
 import EquipoPage from './components/EquipoPage'
-import DocumentosPage from './components/DocumentosPage'
 import {
   supabase,
   loadProjects, upsertProject, deleteProject,
@@ -271,8 +270,6 @@ function App() {
           onEditMember={handleEditMember}
           onDeleteMember={handleDeleteMember}
         />
-      case 'documentos':
-        return <DocumentosPage projects={projects} />
       case 'configuracion':
         return <ConfigPage />
       default:

@@ -14,6 +14,12 @@ const AVATAR_PALETTE = [
 
 const CATEGORIES = ['OBRA', 'PROYECTO', 'GREMIOS']
 
+const ROLE_META = {
+  'Resp. Obra':     { color: '#F97316', bg: '#FFF7ED' },
+  'Resp. Proyecto': { color: '#3B82F6', bg: '#EFF6FF' },
+  'Contratista':    { color: '#8B5CF6', bg: '#F5F3FF' },
+}
+
 const CATEGORY_META = {
   OBRA:     { label: 'Obra',     color: '#F97316', bg: '#FFF7ED', border: '#FED7AA' },
   PROYECTO: { label: 'Proyecto', color: '#3B82F6', bg: '#EFF6FF', border: '#BFDBFE' },
@@ -329,25 +335,35 @@ function MemberCard({ member, obras, onEdit, onDelete }) {
       {obras.length > 0 && (
         <div style={{ padding: '8px 0' }}>
           {obras.map(o => (
-            <div key={o.id} style={{
-              display: 'flex', alignItems: 'center',
-              padding: '8px 16px', gap: 10,
-            }}>
+            <div key={o.id} style={{ padding: '8px 16px 6px', display: 'flex', gap: 10 }}>
               <div style={{
-                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0, marginTop: 4,
                 background: STATUS_COLORS[o.status].color,
               }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{
                   fontSize: 12, color: 'var(--gray-700)', fontWeight: 600,
                   whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                  marginBottom: 3,
                 }}>
                   {o.name}
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 5 }}>
+                  {o.roles.map(role => (
+                    <span key={role} style={{
+                      fontSize: 10, fontWeight: 700,
+                      color: ROLE_META[role].color,
+                      background: ROLE_META[role].bg,
+                      padding: '1px 7px', borderRadius: 99,
+                    }}>
+                      {role}
+                    </span>
+                  ))}
                 </div>
                 <MiniProgressBar value={o.progress} />
               </div>
               <span style={{
-                fontSize: 10, fontWeight: 700, flexShrink: 0, marginLeft: 4,
+                fontSize: 10, fontWeight: 700, flexShrink: 0, marginLeft: 4, alignSelf: 'flex-start',
                 color: STATUS_COLORS[o.status].color,
                 background: STATUS_COLORS[o.status].bg,
                 padding: '2px 8px', borderRadius: 99,
@@ -369,8 +385,17 @@ function EquipoPage({ projects, teamMembers, onAddMember, onEditMember, onDelete
   const totalPersonas = teamMembers.length
   const totalObras = projects.length
 
-  const obrasByMember = (memberName) =>
-    projects.filter(p => p.responsible === memberName)
+  const obrasByMember = (memberName) => {
+    const result = []
+    for (const p of projects) {
+      const roles = []
+      if (p.responsible         === memberName) roles.push('Resp. Obra')
+      if (p.responsableProyecto === memberName) roles.push('Resp. Proyecto')
+      if (p.contratista         === memberName) roles.push('Contratista')
+      if (roles.length > 0) result.push({ ...p, roles })
+    }
+    return result
+  }
 
   const handleDeleteClick = (id, name) => setDeleteTarget({ id, name })
   const handleDeleteConfirm = () => {

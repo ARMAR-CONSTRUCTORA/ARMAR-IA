@@ -11,7 +11,6 @@ const NAV_GROUPS = [
     items: [
       { id: 'cronogramas', label: 'Cronogramas', icon: '📅' },
       { id: 'equipo',      label: 'Equipo',       icon: '👥' },
-      { id: 'documentos',  label: 'Documentos',   icon: '📁' },
     ],
   },
   {
