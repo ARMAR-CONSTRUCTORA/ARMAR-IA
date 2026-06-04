@@ -279,7 +279,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   }
 
   return (
-    <div ref={scrollRef} style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: 12, border: '1px solid var(--gray-200)', background: 'white' }}>
+    <div ref={scrollRef} data-gantt-scroll style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: 12, border: '1px solid var(--gray-200)', background: 'white' }}>
       <div data-gantt-content style={{ minWidth: TABLE_W + timelineW + (structuralMode ? 32 : 0) }}>
         <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: '2px solid var(--gray-200)', position: 'sticky', top: 0, zIndex: 10 }}>
           {[
@@ -1013,11 +1013,25 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       y += 5
 
       // ── Tabla Gantt ──
-      const contentEl = ganttRef.current?.querySelector('[data-gantt-content]')
-      if (contentEl) {
+      const scrollContainer = ganttRef.current?.querySelector('[data-gantt-scroll]')
+      const contentEl       = ganttRef.current?.querySelector('[data-gantt-content]')
+      if (scrollContainer && contentEl) {
+        // Ir al inicio y esperar que el DOM se actualice
+        scrollContainer.scrollLeft = 0
+        await new Promise(r => setTimeout(r, 150))
+
+        // Quitar overflow temporalmente para que html2canvas capture el ancho completo
+        const fullWidth = scrollContainer.scrollWidth
+        const prevOverflow = scrollContainer.style.overflowX
+        scrollContainer.style.overflowX = 'visible'
+
         const canvas = await html2canvas(contentEl, {
           scale: 1.5, useCORS: true, backgroundColor: '#ffffff', logging: false,
+          width: fullWidth, windowWidth: fullWidth,
         })
+
+        scrollContainer.style.overflowX = prevOverflow
+
         const imgW = pageW - mg * 2
         const imgH = Math.min(pageH - y - mg, (canvas.height * imgW) / canvas.width)
         pdf.addImage(canvas.toDataURL('image/png'), 'PNG', mg, y, imgW, imgH)
