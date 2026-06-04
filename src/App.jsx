@@ -9,11 +9,12 @@ import ConfigPage from './components/ConfigPage'
 import CronogramasPage from './components/CronogramasPage'
 import EquipoPage from './components/EquipoPage'
 import DocumentosPage from './components/DocumentosPage'
-import { sampleProjects } from './data/sampleData'
-
-const STORAGE_KEY  = 'armar-ia-projects'
-const CRON_KEY     = 'armar-ia-cronogramas'
-const TEAM_KEY     = 'armar-ia-team'
+import {
+  supabase,
+  loadProjects, upsertProject, deleteProject,
+  loadCronogramasAll, upsertCronograma, deleteCronograma,
+  loadTeamMembers, upsertTeamMember, deleteTeamMember,
+} from './lib/supabase'
 
 const PAGE_TITLES = {
   dashboard:     'Dashboard',
@@ -24,50 +25,25 @@ const PAGE_TITLES = {
   configuracion: 'Configuración',
 }
 
+function LoadingScreen() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--gray-100)' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ fontSize: 48, marginBottom: 16 }}>🏗️</div>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--gray-600)' }}>Cargando datos…</div>
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>Conectando con Supabase</div>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   const { isDesktop, isMobile } = useBreakpoint()
 
-  const [projects, setProjects] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      return saved ? JSON.parse(saved) : sampleProjects
-    } catch {
-      return sampleProjects
-    }
-  })
-
-  const [teamMembers, setTeamMembers] = useState(() => {
-    try {
-      const saved = localStorage.getItem(TEAM_KEY)
-      if (saved) return JSON.parse(saved)
-      // Migrar responsables existentes como categoría OBRA
-      const savedProjects = localStorage.getItem(STORAGE_KEY)
-      const projs = savedProjects ? JSON.parse(savedProjects) : sampleProjects
-      const names = [...new Set(projs.map(p => p.responsible).filter(Boolean))]
-      return names.map((name, i) => ({ id: `m-${i}`, name, category: 'OBRA' }))
-    } catch {
-      const names = [...new Set(sampleProjects.map(p => p.responsible).filter(Boolean))]
-      return names.map((name, i) => ({ id: `m-${i}`, name, category: 'OBRA' }))
-    }
-  })
-
-  const [cronogramas, setCronogramas] = useState(() => {
-    try {
-      const saved = localStorage.getItem(CRON_KEY)
-      if (!saved) return {}
-      const data = JSON.parse(saved)
-      // Migración: si algún valor es objeto plano (formato viejo) lo envuelve en array
-      const migrated = {}
-      for (const [key, val] of Object.entries(data)) {
-        if (Array.isArray(val)) {
-          migrated[key] = val
-        } else if (val && typeof val === 'object' && val.tareas) {
-          migrated[key] = [{ ...val, id: val.id || `cron-${key}-0`, nombre: val.nombre || 'Cronograma' }]
-        }
-      }
-      return migrated
-    } catch { return {} }
-  })
+  const [loading, setLoading]     = useState(true)
+  const [projects, setProjects]   = useState([])
+  const [teamMembers, setTeamMembers] = useState([])
+  const [cronogramas, setCronogramas] = useState({})
 
   const [activePage, setActivePage]   = useState('dashboard')
   const [menuOpen, setMenuOpen]       = useState(false)
@@ -75,131 +51,188 @@ function App() {
   const [editingProject, setEditing]  = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
+  // ── Carga inicial ───────────────────────────────────────────────────────────
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
-  }, [projects])
+    Promise.all([
+      loadProjects(),
+      loadTeamMembers(),
+      loadCronogramasAll(),
+    ]).then(([projs, team, cronos]) => {
+      setProjects(projs)
+      setTeamMembers(team)
+      setCronogramas(cronos)
+      setLoading(false)
+    })
+  }, [])
 
+  // ── Suscripciones Realtime ──────────────────────────────────────────────────
   useEffect(() => {
-    localStorage.setItem(TEAM_KEY, JSON.stringify(teamMembers))
-  }, [teamMembers])
+    const channel = supabase
+      .channel('armar-ia-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
+        loadProjects().then(setProjects)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'cronogramas' }, () => {
+        loadCronogramasAll().then(setCronogramas)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => {
+        loadTeamMembers().then(setTeamMembers)
+      })
+      .subscribe()
 
-  useEffect(() => {
-    localStorage.setItem(CRON_KEY, JSON.stringify(cronogramas))
-  }, [cronogramas])
+    return () => supabase.removeChannel(channel)
+  }, [])
 
-  // Close drawer when resizing to desktop
+  // ── UI effects ──────────────────────────────────────────────────────────────
   useEffect(() => { if (isDesktop) setMenuOpen(false) }, [isDesktop])
 
-  // Prevent body scroll when drawer or modal is open on mobile
   useEffect(() => {
     document.body.style.overflow = (!isDesktop && menuOpen) || modalOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
   }, [menuOpen, modalOpen, isDesktop])
 
-  const openAdd   = () => { setEditing(null); setModalOpen(true) }
-  const openEdit  = (p) => { setEditing(p); setModalOpen(true) }
+  // ── Navegación y modal ──────────────────────────────────────────────────────
+  const openAdd    = () => { setEditing(null); setModalOpen(true) }
+  const openEdit   = (p) => { setEditing(p); setModalOpen(true) }
   const closeModal = () => { setModalOpen(false); setEditing(null) }
-
   const handleNavigate = (page) => { setActivePage(page); setMenuOpen(false) }
 
-  const handleSave = (data) => {
+  // ── Obras ───────────────────────────────────────────────────────────────────
+  const handleSave = async (data) => {
     if (editingProject) {
-      setProjects(prev => prev.map(p => p.id === editingProject.id ? { ...data, id: p.id } : p))
+      const updated = { ...data, id: editingProject.id }
+      setProjects(prev => prev.map(p => p.id === editingProject.id ? updated : p))
+      await upsertProject(updated)
     } else {
-      const newId = projects.length > 0 ? Math.max(...projects.map(p => p.id)) + 1 : 1
-      setProjects(prev => [...prev, { ...data, id: newId }])
+      const newId = Date.now()
+      const project = { ...data, id: newId, tasks: data.tasks || [], progress: data.progress ?? 0 }
+      setProjects(prev => [...prev, project])
+      await upsertProject(project)
     }
     closeModal()
   }
 
-  const handleDelete = (id) => {
+  const handleDelete = async (id) => {
     setProjects(prev => prev.filter(p => p.id !== id))
     setDeleteTarget(null)
+    await deleteProject(id)
   }
 
-  const handleCreateCronograma = (projectId, data) => {
+  const handleUpdateTasks = async (projectId, updatedTasks) => {
+    const avg = updatedTasks.length
+      ? Math.round(updatedTasks.reduce((s, t) => s + t.progress, 0) / updatedTasks.length)
+      : 0
+    const project = projects.find(p => p.id === projectId)
+    if (!project) return
+    const updated = { ...project, tasks: updatedTasks, progress: avg }
+    setProjects(prev => prev.map(p => p.id === projectId ? updated : p))
+    await upsertProject(updated)
+  }
+
+  // ── Cronogramas ─────────────────────────────────────────────────────────────
+  const handleCreateCronograma = async (projectId, data) => {
     const id = `cron-${projectId}-${Date.now()}`
+    const cronograma = { ...data, id }
     setCronogramas(prev => ({
       ...prev,
-      [projectId]: [...(prev[projectId] || []), { ...data, id }],
+      [projectId]: [...(prev[projectId] || []), cronograma],
     }))
+    await upsertCronograma(cronograma)
   }
 
-  const handleDeleteCronograma = (projectId, cronId) => {
+  const handleDeleteCronograma = async (projectId, cronId) => {
     setCronogramas(prev => ({
       ...prev,
       [projectId]: (prev[projectId] || []).filter(c => c.id !== cronId),
     }))
+    await deleteCronograma(cronId)
   }
 
-  const handleSaveCronograma = (projectId, cronId, updates) => {
+  const handleSaveCronograma = async (projectId, cronId, updates) => {
+    const existing = cronogramas[projectId]?.find(c => c.id === cronId)
+    if (!existing) return
+    const updated = { ...existing, ...updates }
     setCronogramas(prev => ({
       ...prev,
-      [projectId]: (prev[projectId] || []).map(c =>
-        c.id === cronId ? { ...c, ...updates } : c
-      ),
+      [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updated : c),
     }))
+    await upsertCronograma(updated)
   }
 
-  const handleCargarAvance = (projectId, cronId, informe, tareasActualizadas) => {
-    setCronogramas(prev => ({
-      ...prev,
-      [projectId]: (prev[projectId] || []).map(c => {
-        if (c.id !== cronId) return c
-        return {
-          ...c,
-          tareas: tareasActualizadas,
-          informes: [...(c.informes || []), informe],
-        }
-      }),
-    }))
+  const handleCargarAvance = async (projectId, cronId, informe, tareasActualizadas) => {
+    const existing = cronogramas[projectId]?.find(c => c.id === cronId)
+    if (!existing) return
+    const updatedCron = {
+      ...existing,
+      tareas: tareasActualizadas,
+      informes: [...(existing.informes || []), informe],
+    }
     const totalPeso = tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + (t.pesoRelativo || 1), 0)
     const nuevoAvance = Math.round(
       tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
     )
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
-  }
+    const updatedProject = projects.find(p => p.id === projectId)
 
-  const handleEditarInforme = (projectId, cronId, informeId, updatedInforme, tareasActualizadas) => {
     setCronogramas(prev => ({
       ...prev,
-      [projectId]: (prev[projectId] || []).map(c => {
-        if (c.id !== cronId) return c
-        return {
-          ...c,
-          tareas: tareasActualizadas,
-          informes: (c.informes || []).map(inf => inf.id === informeId ? updatedInforme : inf),
-        }
-      }),
+      [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updatedCron : c),
     }))
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
+
+    await Promise.all([
+      upsertCronograma(updatedCron),
+      updatedProject ? upsertProject({ ...updatedProject, progress: nuevoAvance }) : Promise.resolve(),
+    ])
+  }
+
+  const handleEditarInforme = async (projectId, cronId, informeId, updatedInforme, tareasActualizadas) => {
+    const existing = cronogramas[projectId]?.find(c => c.id === cronId)
+    if (!existing) return
+    const updatedCron = {
+      ...existing,
+      tareas: tareasActualizadas,
+      informes: (existing.informes || []).map(inf => inf.id === informeId ? updatedInforme : inf),
+    }
     const totalPeso = tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + (t.pesoRelativo || 1), 0)
     const nuevoAvance = Math.round(
       tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
     )
+    const updatedProject = projects.find(p => p.id === projectId)
+
+    setCronogramas(prev => ({
+      ...prev,
+      [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updatedCron : c),
+    }))
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
+
+    await Promise.all([
+      upsertCronograma(updatedCron),
+      updatedProject ? upsertProject({ ...updatedProject, progress: nuevoAvance }) : Promise.resolve(),
+    ])
   }
 
-  const handleAddMember = (name, category) => {
-    const id = `m-${Date.now()}`
-    setTeamMembers(prev => [...prev, { id, name, category }])
+  // ── Equipo ──────────────────────────────────────────────────────────────────
+  const handleAddMember = async (name, category) => {
+    const member = { id: `m-${Date.now()}`, name, category }
+    setTeamMembers(prev => [...prev, member])
+    await upsertTeamMember(member)
   }
 
-  const handleEditMember = (id, name) => {
-    setTeamMembers(prev => prev.map(m => m.id === id ? { ...m, name } : m))
+  const handleEditMember = async (id, name) => {
+    const existing = teamMembers.find(m => m.id === id)
+    if (!existing) return
+    const updated = { ...existing, name }
+    setTeamMembers(prev => prev.map(m => m.id === id ? updated : m))
+    await upsertTeamMember(updated)
   }
 
-  const handleDeleteMember = (id) => {
+  const handleDeleteMember = async (id) => {
     setTeamMembers(prev => prev.filter(m => m.id !== id))
+    await deleteTeamMember(id)
   }
 
-  const handleUpdateTasks = (projectId, updatedTasks) => {
-    const avg = updatedTasks.length
-      ? Math.round(updatedTasks.reduce((s, t) => s + t.progress, 0) / updatedTasks.length)
-      : 0
-    setProjects(prev => prev.map(p =>
-      p.id === projectId ? { ...p, tasks: updatedTasks, progress: avg } : p
-    ))
-  }
+  // ── Render ──────────────────────────────────────────────────────────────────
+  if (loading) return <LoadingScreen />
 
   const renderPage = () => {
     switch (activePage) {
@@ -241,7 +274,6 @@ function App() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--gray-100)' }}>
-      {/* Sidebar */}
       <Sidebar
         activePage={activePage}
         onNavigate={handleNavigate}
@@ -250,7 +282,6 @@ function App() {
         isDesktop={isDesktop}
       />
 
-      {/* Main area */}
       <div style={{
         marginLeft: isDesktop ? 240 : 0,
         flex: 1,
@@ -260,7 +291,6 @@ function App() {
         maxWidth: isDesktop ? 'calc(100vw - 240px)' : '100vw',
         minWidth: 0,
       }}>
-        {/* TopBar only on mobile/tablet */}
         {!isDesktop && (
           <TopBar
             onMenuOpen={() => setMenuOpen(true)}
@@ -276,12 +306,10 @@ function App() {
         </main>
       </div>
 
-      {/* Add/Edit modal */}
       {modalOpen && (
         <ProjectModal project={editingProject} teamMembers={teamMembers} onSave={handleSave} onClose={closeModal} />
       )}
 
-      {/* Delete confirmation */}
       {deleteTarget !== null && (
         <div
           style={{
@@ -303,10 +331,7 @@ function App() {
             textAlign: 'center',
           }}>
             {isMobile && (
-              <div style={{
-                width: 40, height: 4, background: 'var(--gray-300)',
-                borderRadius: 99, margin: '0 auto 20px',
-              }} />
+              <div style={{ width: 40, height: 4, background: 'var(--gray-300)', borderRadius: 99, margin: '0 auto 20px' }} />
             )}
             <div style={{ fontSize: 44, marginBottom: 14 }}>🗑️</div>
             <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 10 }}>
@@ -318,22 +343,13 @@ function App() {
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexDirection: isMobile ? 'column-reverse' : 'row' }}>
               <button
                 onClick={() => setDeleteTarget(null)}
-                style={{
-                  padding: '11px 24px', borderRadius: 8,
-                  border: '1px solid var(--gray-200)', background: 'white',
-                  color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600,
-                  fontSize: 14, fontFamily: 'inherit',
-                }}
+                style={{ padding: '11px 24px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 14, fontFamily: 'inherit' }}
               >
                 Cancelar
               </button>
               <button
                 onClick={() => handleDelete(deleteTarget)}
-                style={{
-                  padding: '11px 24px', borderRadius: 8, border: 'none',
-                  background: 'var(--red)', color: 'white', cursor: 'pointer',
-                  fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
-                }}
+                style={{ padding: '11px 24px', borderRadius: 8, border: 'none', background: 'var(--red)', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}
               >
                 Sí, eliminar
               </button>
