@@ -83,6 +83,14 @@ function App() {
     return () => supabase.removeChannel(channel)
   }, [])
 
+  // ── Keep-alive: evita que el proyecto gratuito de Supabase se pause ─────────
+  useEffect(() => {
+    const ping = () => supabase.from('projects').select('id').limit(1)
+    ping()
+    const id = setInterval(ping, 4 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [])
+
   // ── UI effects ──────────────────────────────────────────────────────────────
   useEffect(() => { if (isDesktop) setMenuOpen(false) }, [isDesktop])
 
