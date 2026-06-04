@@ -1020,21 +1020,44 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         scrollContainer.scrollLeft = 0
         await new Promise(r => setTimeout(r, 150))
 
-        // Quitar overflow temporalmente para que html2canvas capture el ancho completo
+        // Quitar overflow del contenedor de scroll
         const fullWidth = scrollContainer.scrollWidth
-        const prevOverflow = scrollContainer.style.overflowX
+        const prevScrollOverflow = scrollContainer.style.overflowX
         scrollContainer.style.overflowX = 'visible'
 
+        // Quitar overflow:hidden de todos los elementos internos (evita texto cortado en barras)
+        const hiddenEls = Array.from(contentEl.querySelectorAll('*')).filter(el => {
+          const s = el.style
+          return s.overflow === 'hidden' || s.overflowX === 'hidden' || s.overflowY === 'hidden'
+        })
+        const savedOverflows = hiddenEls.map(el => ({
+          el,
+          overflow:  el.style.overflow,
+          overflowX: el.style.overflowX,
+          overflowY: el.style.overflowY,
+        }))
+        hiddenEls.forEach(el => {
+          if (el.style.overflow  === 'hidden') el.style.overflow  = 'visible'
+          if (el.style.overflowX === 'hidden') el.style.overflowX = 'visible'
+          if (el.style.overflowY === 'hidden') el.style.overflowY = 'visible'
+        })
+
         const canvas = await html2canvas(contentEl, {
-          scale: 1.2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+          scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
           width: fullWidth, windowWidth: fullWidth,
         })
 
-        scrollContainer.style.overflowX = prevOverflow
+        // Restaurar todos los overflow
+        scrollContainer.style.overflowX = prevScrollOverflow
+        savedOverflows.forEach(({ el, overflow, overflowX, overflowY }) => {
+          el.style.overflow  = overflow
+          el.style.overflowX = overflowX
+          el.style.overflowY = overflowY
+        })
 
         const imgW = pageW - mg * 2
         const imgH = Math.min(pageH - y - mg, (canvas.height * imgW) / canvas.width)
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.7), 'JPEG', mg, y, imgW, imgH)
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', mg, y, imgW, imgH)
         y += imgH + 6
       }
 
