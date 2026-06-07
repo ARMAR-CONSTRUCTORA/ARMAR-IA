@@ -168,9 +168,11 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     const el = scrollRef.current
     if (!el) return
     const handler = (e) => {
-      e.preventDefault()
-      onZoomChange(i => e.deltaY < 0 ? Math.min(3, i + 1) : Math.max(0, i - 1))
-    }
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  onZoomChange(i => e.deltaY < 0 ? Math.min(3, i + 1) : Math.max(0, i - 1))
+}
+
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
   }, [onZoomChange])
