@@ -439,7 +439,7 @@ wheelCbRef.current = (e) => {
             <span style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 500 }}>Hoy</span>
           </div>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>
-            {isMobile ? '← deslizá para navegar →' : 'Rueda del mouse para zoom · deslizá para navegar'}
+            {isMobile ? '← deslizá para navegar →' : 'Ctrl + rueda para zoom · rueda para desplazar'}
           </span>
         </div>
       </div>
