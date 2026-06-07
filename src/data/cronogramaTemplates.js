@@ -1,8 +1,8 @@
 import { calcFechaFin, calcDuracionHabil, addBusinessDays } from '../utils/calendarUtils'
 
 // ── Helpers de construcción ───────────────────────────────────────────────────
-const e = (nombre, duracionDias, pesoRelativo, esCritica = false, tareas = []) =>
-  ({ nombre, duracionDias, pesoRelativo, esCritica, tareas })
+const e = (nombre, duracionDias, pesoRelativo, tareas = []) =>
+  ({ nombre, duracionDias, pesoRelativo, esCritica: false, tareas })
 const t = (nombre, duracionDias, pesoRelativo) =>
   ({ nombre, duracionDias, pesoRelativo })
 
@@ -17,13 +17,13 @@ export const CRONOGRAMA_TEMPLATES = [
     etapas: [
       e('Inicio de obra',              3,  2),
       e('Movimiento de suelo',          7,  3),
-      e('Fundaciones',                 20,  8, true, [
+      e('Fundaciones',                 20,  8, [
         t('Excavación',                 5, 25),
         t('Armado de hierro',           5, 25),
         t('Encofrado',                  5, 25),
         t('Hormigonado',                5, 25),
       ]),
-      e('Estructura',                  30, 12, true),
+      e('Estructura',                  30, 12),
       e('Mampostería',                 20,  8),
       e('Cubierta',                    15,  6),
       e('Instalación sanitaria',       15,  6),
@@ -51,7 +51,7 @@ export const CRONOGRAMA_TEMPLATES = [
     etapas: [
       e('Relevamiento y proyecto',     5,  5),
       e('Demoliciones y retiro',       7,  8),
-      e('Refuerzos estructurales',    10,  8, true),
+      e('Refuerzos estructurales',    10,  8),
       e('Albañilería',                15, 12),
       e('Instalación sanitaria',      10, 10),
       e('Instalación eléctrica',      10, 10),
@@ -101,7 +101,7 @@ export const CRONOGRAMA_TEMPLATES = [
       e('Instalación eléctrica',      10,  8),
       e('Gas / ventilaciones',         8,  7),
       e('Climatización',               7,  6),
-      e('Extracción / equipos cocina',10,  8, true),
+      e('Extracción / equipos cocina',10,  8),
       e('Cielorrasos',                 8,  5),
       e('Pisos y revestimientos',     15,  8),
       e('Carpinterías / herrerías',   10,  7),
@@ -122,7 +122,7 @@ export const CRONOGRAMA_TEMPLATES = [
       e('Relevamiento y diseño',       5,  5),
       e('Demoliciones',                5,  6),
       e('Tabiquería',                 10, 10),
-      e('Instalación eléctrica / datos',12,12, true),
+      e('Instalación eléctrica / datos',12,12),
       e('Climatización',               7, 10),
       e('Cielorrasos',                 8, 10),
       e('Pisos',                       8, 10),
@@ -140,7 +140,7 @@ export const CRONOGRAMA_TEMPLATES = [
     etapas: [
       e('Relevamiento',    2,  5),
       e('Demolición parcial',3, 10),
-      e('Obra civil',     10, 30, true),
+      e('Obra civil',     10, 30),
       e('Instalaciones',   7, 25),
       e('Terminaciones',   8, 20),
       e('Entrega',         1, 10),
@@ -172,7 +172,7 @@ export function generarTareasDesdeTemplate(template, etapasIncluidas, projectId,
       duracionDias: durEtapa, responsable: '',
       avanceActual: 0, estado: 'Pendiente',
       pesoRelativo: etapa.pesoRelativo,
-      dependeDeId: null, esCritica: etapa.esCritica,
+      dependeDeId: null, esCritica: false,
       tipoVinculo: 'Fin a inicio', desfaseDias: 0,
     })
 
