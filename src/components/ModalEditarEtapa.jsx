@@ -37,6 +37,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
     dependeDeId:  tarea?.dependeDeId  ?? null,
     tipoVinculo:  tarea?.tipoVinculo  || 'Fin a inicio',
     desfaseDias:  String(tarea?.desfaseDias ?? 0),
+    presupuesto:  tarea?.presupuesto != null ? String(tarea.presupuesto) : '',
   })
 
   const calcFechaInicioDesde = (predId, desfase) => {
@@ -62,10 +63,10 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
       pesoRelativo:  Number(form.pesoRelativo),
       desfaseDias:   Number(form.desfaseDias),
       dependeDeId:   form.dependeDeId ? Number(form.dependeDeId) : null,
+      presupuesto:   form.presupuesto !== '' ? Number(form.presupuesto) : null,
     })
   }
 
-  // Excluir la tarea actual y sus hijos del selector de predecesoras
   const opcionesPredecesora = tareas.filter(t => t.id !== tarea?.id && t.parentId !== tarea?.id)
 
   return (
@@ -112,10 +113,20 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
             </div>
           </Field>
 
-          <Field label="Incidencia %">
-            <input type="number" min={0} max={100} style={inputStyle} value={form.pesoRelativo}
-              onChange={e => setForm(f => ({ ...f, pesoRelativo: e.target.value }))} />
-          </Field>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <Field label="Incidencia %">
+              <input type="number" min={0} max={100} style={inputStyle} value={form.pesoRelativo}
+                onChange={e => setForm(f => ({ ...f, pesoRelativo: e.target.value }))} />
+            </Field>
+            <Field label="Presupuesto ($)" hint="Monto estimado para esta etapa">
+              <input
+                type="number" min={0} style={inputStyle}
+                placeholder="Ej: 500000"
+                value={form.presupuesto}
+                onChange={e => setForm(f => ({ ...f, presupuesto: e.target.value }))}
+              />
+            </Field>
+          </div>
 
           {/* Dependencias */}
           <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 16, marginBottom: 0 }}>
