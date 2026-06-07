@@ -105,8 +105,10 @@ function CronogramasPage({ projects }) {
   // ── Zoom con rueda del mouse ─────────────────────────────────────────────
   // Ref-callback para evitar closures obsoletas con listeners passivos=false
   const wheelCbRef = useRef()
-  wheelCbRef.current = (e) => {
-    e.preventDefault()
+wheelCbRef.current = (e) => {
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  
     const el  = scrollRef.current
     if (!el)  return
 
