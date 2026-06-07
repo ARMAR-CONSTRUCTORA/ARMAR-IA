@@ -103,7 +103,6 @@ function ProgressCell({ value }) {
   )
 }
 
-// ── StatsPanel ────────────────────────────────────────────────────────────────
 function StatsPanel({ tareas, avanceGeneral, informes, certificados }) {
   const total       = tareas.length
   const finalizadas = tareas.filter(t => t.avanceActual === 100).length
@@ -180,7 +179,6 @@ function StatsPanel({ tareas, avanceGeneral, informes, certificados }) {
   )
 }
 
-// ── TablaGantt ────────────────────────────────────────────────────────────────
 function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, ppd, onZoomChange, certificados }) {
   const scrollRef = useRef()
   const [expandedEtapas, setExpandedEtapas] = useState(new Set(tareas.filter(t => t.parentId === null).map(t => t.id)))
@@ -328,7 +326,9 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
         </div>
         {structuralMode && (
           <div style={{ width: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-            <button onClick={() => onDeleteTarea(tarea.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', fontSize: 14, padding: '4px', lineHeight: 1 }}>×</button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onDeleteTarea(tarea.id) }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', fontSize: 14, padding: '4px', lineHeight: 1 }}>×</button>
           </div>
         )}
       </div>
@@ -341,16 +341,16 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
         <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: '2px solid var(--gray-200)', position: 'sticky', top: 0, zIndex: 10 }}>
           {[
             { label: 'Etapa / Tarea', w: COL_NOMBRE, sticky: true },
-            { label: 'Inicio',       w: COL_INICIO },
-            { label: 'Fin Est.',     w: COL_FIN },
-            { label: 'Duración',     w: COL_DIAS },
-            { label: 'Avance',       w: COL_AVANCE },
-            { label: 'Estado',       w: COL_ESTADO },
-            { label: 'Presupuesto',  w: COL_PRESUP },
-            { label: 'Adicionales',  w: COL_ADIC },
-            { label: 'Subtotal',     w: COL_SUBTOTAL },
-            { label: 'Pagos',        w: COL_PAGOS },
-            { label: 'Saldo',        w: COL_SALDO },
+            { label: 'Inicio',        w: COL_INICIO },
+            { label: 'Fin Est.',      w: COL_FIN },
+            { label: 'Duración',      w: COL_DIAS },
+            { label: 'Avance',        w: COL_AVANCE },
+            { label: 'Estado',        w: COL_ESTADO },
+            { label: 'Presupuesto',   w: COL_PRESUP },
+            { label: 'Adicionales',   w: COL_ADIC },
+            { label: 'Subtotal',      w: COL_SUBTOTAL },
+            { label: 'Pagos',         w: COL_PAGOS },
+            { label: 'Saldo',         w: COL_SALDO },
           ].map(col => (
             <div key={col.label} style={{
               ...cellStyle(col.w, col.sticky),
@@ -432,7 +432,6 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   )
 }
 
-// ── Modal Certificado de Pago ─────────────────────────────────────────────────
 function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, onGuardar }) {
   const etapas = tareas.filter(t => t.parentId === null && calcTotalEtapa(t) > 0)
   const [fecha,         setFecha]         = useState(new Date().toISOString().slice(0, 10))
@@ -450,40 +449,28 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
   }
 
   const totalCertificado = [...incluidas].reduce((s, id) => s + parseMiles(montos[id] || ''), 0)
-
   const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }
 
   const handleGuardar = () => {
-    // Validar que ningún monto supere el saldo disponible
     const excedentes = [...incluidas].filter(id => {
-      const etapa    = tareas.find(t => t.id === id)
-      const total    = calcTotalEtapa(etapa)
-      const pagado   = calcPagadoAcumulado(id, certificados)
-      const saldo    = total - pagado
-      const monto    = parseMiles(montos[id] || '')
+      const etapa  = tareas.find(t => t.id === id)
+      const total  = calcTotalEtapa(etapa)
+      const pagado = calcPagadoAcumulado(id, certificados)
+      const saldo  = total - pagado
+      const monto  = parseMiles(montos[id] || '')
       return monto > saldo
     })
     if (excedentes.length > 0) {
-      const nombres = excedentes.map(id => tareas.find(t => t.id === id)?.nombre).join(', ')
-      setErrorModal(nombres)
+      setErrorModal(excedentes.map(id => tareas.find(t => t.id === id)?.nombre).join(', '))
       return
     }
-
     const etapasCert = [...incluidas].map(id => ({
       tareaId:     id,
       nombreTarea: tareas.find(t => t.id === id)?.nombre || '',
       montoPagado: parseMiles(montos[id] || ''),
       totalEtapa:  calcTotalEtapa(tareas.find(t => t.id === id)),
     }))
-    onGuardar({
-      id:               `cert-${Date.now()}`,
-      numero,
-      fecha,
-      responsable,
-      observaciones,
-      totalCertificado,
-      etapas:           etapasCert,
-    })
+    onGuardar({ id: `cert-${Date.now()}`, numero, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert })
     onClose()
   }
 
@@ -491,8 +478,6 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16, backdropFilter: 'blur(2px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div style={{ background: 'white', borderRadius: 18, width: '100%', maxWidth: 680, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}>
-
-        {/* Header */}
         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <h2 style={{ fontSize: 17, fontWeight: 900, color: 'var(--gray-900)', marginBottom: 2 }}>Certificado de pago #{numero}</h2>
@@ -500,9 +485,7 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--gray-400)', padding: '4px 8px' }}>×</button>
         </div>
-
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
-          {/* Fecha + responsable */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 20 }}>
             <div>
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Fecha</label>
@@ -512,14 +495,10 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
               <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }}>Responsable</label>
               <select value={responsable} onChange={e => setResponsable(e.target.value)} style={inputStyle}>
                 <option value="">— Seleccionar —</option>
-                {(teamMembers || []).map(m => (
-                  <option key={m.id} value={m.name}>{m.name}</option>
-                ))}
+                {(teamMembers || []).map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
               </select>
             </div>
           </div>
-
-          {/* Banner total */}
           <div style={{ background: 'linear-gradient(135deg, #EFF6FF, #DBEAFE)', border: '1px solid #BFDBFE', borderRadius: 12, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <div>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', marginBottom: 2 }}>Total este certificado</div>
@@ -527,30 +506,20 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
             </div>
             <div style={{ fontSize: 32 }}>📋</div>
           </div>
-
-          {/* Etapas */}
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-            Etapas ({etapas.length})
-          </div>
-
-          {etapas.length === 0 && (
-            <div style={{ fontSize: 13, color: 'var(--gray-400)', textAlign: 'center', padding: '20px 0' }}>No hay etapas con presupuesto cargado</div>
-          )}
-
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Etapas ({etapas.length})</div>
+          {etapas.length === 0 && <div style={{ fontSize: 13, color: 'var(--gray-400)', textAlign: 'center', padding: '20px 0' }}>No hay etapas con presupuesto cargado</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
             {etapas.map(etapa => {
-              const total    = calcTotalEtapa(etapa)
-              const pagado   = calcPagadoAcumulado(etapa.id, certificados)
-              const saldo    = total - pagado
-              const estaInc  = incluidas.has(etapa.id)
-              const montoPag = parseMiles(montos[etapa.id] || '')
+              const total     = calcTotalEtapa(etapa)
+              const pagado    = calcPagadoAcumulado(etapa.id, certificados)
+              const saldo     = total - pagado
+              const estaInc   = incluidas.has(etapa.id)
+              const montoPag  = parseMiles(montos[etapa.id] || '')
               const saldoTras = saldo - montoPag
-
               return (
-                <div key={etapa.id} style={{ border: `1.5px solid ${estaInc ? '#BFDBFE' : 'var(--gray-200)'}`, borderRadius: 10, overflow: 'hidden', background: estaInc ? '#F0F9FF' : '#FAFAFA', transition: 'border-color 0.15s, background 0.15s' }}>
+                <div key={etapa.id} style={{ border: `1.5px solid ${estaInc ? '#BFDBFE' : 'var(--gray-200)'}`, borderRadius: 10, overflow: 'hidden', background: estaInc ? '#F0F9FF' : '#FAFAFA' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px' }}>
-                    <input type="checkbox" checked={estaInc} onChange={() => toggleIncluida(etapa.id)}
-                      style={{ width: 16, height: 16, accentColor: '#3B82F6', flexShrink: 0, cursor: 'pointer' }} />
+                    <input type="checkbox" checked={estaInc} onChange={() => toggleIncluida(etapa.id)} style={{ width: 16, height: 16, accentColor: '#3B82F6', flexShrink: 0, cursor: 'pointer' }} />
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-800)' }}>{etapa.nombre}</div>
                       <div style={{ display: 'flex', gap: 12, marginTop: 3, flexWrap: 'wrap' }}>
@@ -562,20 +531,14 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
                   </div>
                   {estaInc && (
                     <div style={{ padding: '0 14px 12px', borderTop: '1px solid #DBEAFE' }}>
-                      <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', marginBottom: 5, marginTop: 10 }}>
-                        Monto a pagar en este certificado
-                      </label>
+                      <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', marginBottom: 5, marginTop: 10 }}>Monto a pagar en este certificado</label>
                       <div style={{ position: 'relative' }}>
                         <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
-                        <input type="text" inputMode="numeric" style={{ ...inputStyle, paddingLeft: 24 }} placeholder="0"
-                          value={montos[etapa.id] || ''}
-                          onChange={e => setMonto(etapa.id, e.target.value)} />
+                        <input type="text" inputMode="numeric" style={{ ...inputStyle, paddingLeft: 24 }} placeholder="0" value={montos[etapa.id] || ''} onChange={e => setMonto(etapa.id, e.target.value)} />
                       </div>
                       {montoPag > 0 && (
                         <div style={{ marginTop: 6, fontSize: 11, color: saldoTras >= 0 ? '#10B981' : '#DC2626', fontWeight: 700 }}>
-                          {saldoTras >= 0
-                            ? `Saldo restante tras este pago: ${fmtPesos(saldoTras)}`
-                            : `⚠ Excede el saldo disponible en ${fmtPesos(Math.abs(saldoTras))}`}
+                          {saldoTras >= 0 ? `Saldo restante tras este pago: ${fmtPesos(saldoTras)}` : `⚠ Excede el saldo disponible en ${fmtPesos(Math.abs(saldoTras))}`}
                         </div>
                       )}
                     </div>
@@ -584,8 +547,6 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
               )
             })}
           </div>
-
-          {/* Observaciones */}
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
               <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Observaciones</label>
@@ -596,8 +557,6 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
               style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--gray-200)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', color: 'var(--gray-700)' }} />
           </div>
         </div>
-
-        {/* Footer */}
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>Cancelar</button>
           <button onClick={handleGuardar} disabled={totalCertificado === 0}
@@ -606,20 +565,13 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
           </button>
         </div>
       </div>
-
-      {/* Modal error monto excedido */}
       {errorModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16 }}>
           <div style={{ background: 'white', borderRadius: 16, maxWidth: 420, width: '100%', padding: 32, textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
             <div style={{ fontSize: 44, marginBottom: 14 }}>⚠️</div>
             <h3 style={{ fontSize: 17, fontWeight: 800, color: '#DC2626', marginBottom: 10 }}>Monto supera el presupuesto</h3>
-            <p style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.6, marginBottom: 24 }}>
-              El monto a pagar supera el presupuesto total disponible en: <strong>{errorModal}</strong>
-            </p>
-            <button onClick={() => setErrorModal(null)}
-              style={{ padding: '10px 28px', borderRadius: 8, border: 'none', background: '#DC2626', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>
-              Revisar montos
-            </button>
+            <p style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.6, marginBottom: 24 }}>El monto a pagar supera el presupuesto total disponible en: <strong>{errorModal}</strong></p>
+            <button onClick={() => setErrorModal(null)} style={{ padding: '10px 28px', borderRadius: 8, border: 'none', background: '#DC2626', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>Revisar montos</button>
           </div>
         </div>
       )}
@@ -627,12 +579,10 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
   )
 }
 
-// ── Historial Certificados ────────────────────────────────────────────────────
 function HistorialCertificados({ certificados, isEditor }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   if (!certificados || !certificados.length) return null
   const toggle = (id) => setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
-
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -644,8 +594,7 @@ function HistorialCertificados({ certificados, isEditor }) {
         const num = cert.numero ?? (certificados.length - revIdx)
         return (
           <div key={cert.id} style={{ border: '1px solid #BFDBFE', borderRadius: 10, marginBottom: 8, overflow: 'hidden', background: 'white' }}>
-            <div onClick={() => toggle(cert.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
+            <div onClick={() => toggle(cert.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
               onMouseEnter={e => e.currentTarget.style.background = '#F0F9FF'}
               onMouseLeave={e => e.currentTarget.style.background = 'white'}>
               <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#3B82F6', color: 'white', fontSize: 12, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>#{num}</div>
@@ -685,12 +634,10 @@ function HistorialCertificados({ certificados, isEditor }) {
   )
 }
 
-// ── Historial Informes ────────────────────────────────────────────────────────
 function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
   const [expandedIds, setExpandedIds] = useState(new Set())
   if (!informes || !informes.length) return null
   const toggle = (id) => setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
-
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -708,8 +655,7 @@ function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
         const num = informe.numero ?? (informes.length - revIdx)
         return (
           <div key={informe.id} style={{ border: '1px solid var(--gray-200)', borderRadius: 10, marginBottom: 8, overflow: 'hidden', background: 'white' }}>
-            <div onClick={() => toggle(informe.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
+            <div onClick={() => toggle(informe.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
               onMouseEnter={e => e.currentTarget.style.background = '#FAFAFA'}
               onMouseLeave={e => e.currentTarget.style.background = 'white'}>
               <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--orange)', color: 'white', fontSize: 12, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>#{num}</div>
@@ -775,7 +721,6 @@ function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
   )
 }
 
-// ── Modal editar informe ──────────────────────────────────────────────────────
 function ModalEditarInforme({ informe, tareas, informes, onSave, onClose }) {
   const isLastInforme = informes.length > 0 && informes[informes.length - 1]?.id === informe.id
   const [editValues, setEditValues] = useState(() => {
@@ -786,8 +731,8 @@ function ModalEditarInforme({ informe, tareas, informes, onSave, onClose }) {
     })
     return map
   })
-  const [fecha, setFecha]               = useState(informe.fecha || '')
-  const [responsable, setResponsable]   = useState(informe.responsable || '')
+  const [fecha, setFecha]                 = useState(informe.fecha || '')
+  const [responsable, setResponsable]     = useState(informe.responsable || '')
   const [observaciones, setObservaciones] = useState(informe.observaciones || '')
   const [fotos, setFotos] = useState(() => { const f = [...(informe.fotos || [])]; while (f.length < 3) f.push(null); return f })
   const fileRef0 = useRef(), fileRef1 = useRef(), fileRef2 = useRef()
@@ -878,9 +823,9 @@ function ModalEditarInforme({ informe, tareas, informes, onSave, onClose }) {
               ))}
             </div>
             {etapas.map(etapa => {
-              const hijos = tareas.filter(t => t.parentId === etapa.id)
+              const hijos    = tareas.filter(t => t.parentId === etapa.id)
               const hasHijos = hijos.length > 0
-              const avEtapa = getAvanceEtapa(etapa.id)
+              const avEtapa  = getAvanceEtapa(etapa.id)
               return (
                 <div key={etapa.id}>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 90px 100px', borderBottom: '1px solid var(--gray-200)', background: '#FAFAFA' }}>
@@ -1059,7 +1004,6 @@ function ModalImpacto({ data, onApply, onDismiss }) {
   )
 }
 
-// ── Componente principal ──────────────────────────────────────────────────────
 export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor }) {
   const [selectedId,      setSelectedId]      = useState(() => cronogramas[0]?.id || null)
   const [showCrearModal,  setShowCrearModal]   = useState(false)
@@ -1093,10 +1037,10 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     )
   }
 
-  const cronograma   = cronogramas.find(c => c.id === selectedId) || cronogramas[0]
-  const tareas       = cronograma?.tareas || []
-  const informes     = cronograma?.informes || []
-  const certificados = cronograma?.certificados || []
+  const cronograma    = cronogramas.find(c => c.id === selectedId) || cronogramas[0]
+  const tareas        = cronograma?.tareas || []
+  const informes      = cronograma?.informes || []
+  const certificados  = cronograma?.certificados || []
   const avanceGeneral = calcAvanceGeneral(tareas)
 
   const handleSaveTareaFromModal = (updatedTarea) => {
@@ -1131,7 +1075,14 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     setCascadeData(null)
   }
 
-  const handleDeleteTarea = (id) => onSaveCronograma(project.id, cronograma.id, { tareas: tareas.filter(t => t.id !== id && t.parentId !== id) })
+  const handleDeleteTarea = (id) => {
+    const tareasRestantes = tareas.filter(t => t.id !== id && t.parentId !== id)
+    const tareasFinales = tareasRestantes.map(t =>
+      t.dependeDeId === id ? { ...t, dependeDeId: null } : t
+    )
+    onSaveCronograma(project.id, cronograma.id, { tareas: tareasFinales })
+    setEditingTarea(null)
+  }
 
   const handleAddSubtarea = (parentEtapa) => setEditingTarea({
     id: null, parentId: parentEtapa.id, obraId: project.id,
@@ -1143,9 +1094,8 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const handleEditarInformeLocal = (updatedInforme, tareasActualizadas) =>
     onEditarInforme(project.id, cronograma.id, updatedInforme.id, updatedInforme, tareasActualizadas)
 
-  const handleGuardarCertificado = (cert) => {
+  const handleGuardarCertificado = (cert) =>
     onSaveCronograma(project.id, cronograma.id, { certificados: [...certificados, cert] })
-  }
 
   const exportarPDF = async () => {
     setExportando(true)
@@ -1177,7 +1127,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         scrollContainer.style.overflowX = prevOverflow
         saved.forEach(({ el, overflow, overflowX, overflowY }) => { el.style.overflow = overflow; el.style.overflowX = overflowX; el.style.overflowY = overflowY })
         const imgW = pageW - mg * 2, imgH = Math.min(pageH - y - mg, (canvas.height * imgW) / canvas.width)
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', mg, y, imgW, imgH); y += imgH + 6
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', mg, y, imgW, imgH)
       }
       pdf.save(`Cronograma_${(project.name || 'obra').replace(/[^\w\s]/g, '').trim()}.pdf`)
     } catch (err) { console.error('Error exportando PDF:', err) }
@@ -1201,7 +1151,6 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
   return (
     <div>
-      {/* Tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16, overflowX: 'auto', paddingBottom: 2 }}>
         {cronogramas.map(c => (
           <button key={c.id} onClick={() => setSelectedId(c.id)} style={{
@@ -1215,7 +1164,6 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         {isEditor && <button onClick={() => setShowCrearModal(true)} style={{ padding: '6px 12px', borderRadius: 7, border: '1px dashed var(--gray-300)', background: 'white', color: 'var(--gray-500)', fontSize: 16, cursor: 'pointer', fontWeight: 700, flexShrink: 0 }} title="Nuevo cronograma">+</button>}
       </div>
 
-      {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {isEditor && (structuralMode ? (
           <button onClick={() => setStructuralMode(false)} style={btnStyle(true)}>✓ Listo</button>
@@ -1236,7 +1184,6 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         </div>
       </div>
 
-      {/* Contenido */}
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <div ref={ganttRef} style={{ flex: 1, minWidth: 0 }}>
           <TablaGantt
@@ -1256,11 +1203,19 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} isEditor={isEditor} />
       <HistorialCertificados certificados={certificados} isEditor={isEditor} />
 
-      {/* Modales */}
       {showCrearModal && <ModalCrearCronograma project={project} onClose={() => setShowCrearModal(false)} onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />}
       {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} onClose={() => setShowAvanceModal(false)} onGuardar={(pid, informe, tareasActualizadas) => { onCargarAvance(pid, cronograma.id, informe, tareasActualizadas); setShowAvanceModal(false) }} />}
       {showCertModal && <ModalCertificado tareas={tareas} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
-      {editingTarea && <ModalEditarEtapa tarea={editingTarea} tareas={tareas} onClose={() => setEditingTarea(null)} onSave={handleSaveTareaFromModal} onAgregarSubetapa={handleAddSubtarea} />}
+      {editingTarea && (
+        <ModalEditarEtapa
+          tarea={editingTarea}
+          tareas={tareas}
+          onClose={() => setEditingTarea(null)}
+          onSave={handleSaveTareaFromModal}
+          onAgregarSubetapa={handleAddSubtarea}
+          onDelete={handleDeleteTarea}
+        />
+      )}
       {editingInforme && <ModalEditarInforme informe={editingInforme} tareas={tareas} informes={informes} onClose={() => setEditingInforme(null)} onSave={handleEditarInformeLocal} />}
       {showDeleteModal && <ModalEliminarCronograma nombre={cronograma.nombre} onClose={() => setShowDeleteModal(false)} onConfirm={() => { onDeleteCronograma(project.id, cronograma.id); setShowDeleteModal(false) }} />}
       {cascadeData && <ModalImpacto data={cascadeData} onApply={handleApplyCascade} onDismiss={handleDismissCascade} />}
