@@ -63,7 +63,6 @@ function App() {
   const [editingProject, setEditing]  = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  // ── Carga inicial ───────────────────────────────────────────────────────────
   useEffect(() => {
     Promise.all([
       loadProjects(),
@@ -77,7 +76,6 @@ function App() {
     })
   }, [])
 
-  // ── Suscripciones Realtime ──────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('armar-ia-realtime')
@@ -95,7 +93,6 @@ function App() {
     return () => supabase.removeChannel(channel)
   }, [])
 
-  // ── Keep-alive: evita que el proyecto gratuito de Supabase se pause ─────────
   useEffect(() => {
     const ping = () => supabase.from('projects').select('id').limit(1)
     ping()
@@ -103,7 +100,6 @@ function App() {
     return () => clearInterval(id)
   }, [])
 
-  // ── UI effects ──────────────────────────────────────────────────────────────
   useEffect(() => { if (isDesktop) setMenuOpen(false) }, [isDesktop])
 
   useEffect(() => {
@@ -111,7 +107,6 @@ function App() {
     return () => { document.body.style.overflow = '' }
   }, [menuOpen, modalOpen, isDesktop])
 
-  // ── Auth ────────────────────────────────────────────────────────────────────
   const handleLogin = (user) => {
     setCurrentUser(user)
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(user))
@@ -123,13 +118,11 @@ function App() {
     sessionStorage.removeItem(SESSION_KEY)
   }
 
-  // ── Navegación y modal ──────────────────────────────────────────────────────
   const openAdd    = () => { setEditing(null); setModalOpen(true) }
   const openEdit   = (p) => { setEditing(p); setModalOpen(true) }
   const closeModal = () => { setModalOpen(false); setEditing(null) }
   const handleNavigate = (page) => { setActivePage(page); setMenuOpen(false) }
 
-  // ── Obras ───────────────────────────────────────────────────────────────────
   const handleSave = async (data) => {
     if (editingProject) {
       const updated = { ...data, id: editingProject.id }
@@ -161,7 +154,6 @@ function App() {
     await upsertProject(updated)
   }
 
-  // ── Cronogramas ─────────────────────────────────────────────────────────────
   const handleCreateCronograma = async (projectId, data) => {
     const id = `cron-${projectId}-${Date.now()}`
     const cronograma = { ...data, id }
@@ -243,7 +235,6 @@ function App() {
     ])
   }
 
-  // ── Equipo ──────────────────────────────────────────────────────────────────
   const handleAddMember = async (name, category) => {
     const member = { id: `m-${Date.now()}`, name, category }
     setTeamMembers(prev => [...prev, member])
@@ -263,7 +254,6 @@ function App() {
     await deleteTeamMember(id)
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) return <LoadingScreen />
 
   const renderPage = () => {
@@ -317,14 +307,15 @@ function App() {
         onLogout={handleLogout}
       />
 
+      {/* ── Contenido principal — ocupa todo el ancho ── */}
       <div style={{
-        marginLeft: isDesktop ? 240 : 0,
+        marginLeft: 0,
         flex: 1,
         height: '100vh',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isDesktop ? 'calc(100vw - 240px)' : '100vw',
+        maxWidth: '100vw',
         minWidth: 0,
       }}>
         {!isDesktop && (
