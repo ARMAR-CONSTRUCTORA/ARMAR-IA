@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef } from 'react'
 import { useBreakpoint } from '../hooks/useBreakpoint'
 import { generarTareasDesdeTemplate } from '../data/cronogramaTemplates'
-import { loadTemplates } from '../data/templateStorage'
+import { loadTemplates, saveTemplates } from '../data/templateStorage'
 import { calcDuracionHabil, calcFechaFin, addBusinessDays, computeCascade } from '../utils/calendarUtils'
 import ModalEditarEtapa from './ModalEditarEtapa'
 
@@ -70,28 +70,58 @@ function StepBar({ step }) {
   )
 }
 
+// ── Modal confirmación eliminar plantilla ─────────────────────────────────────
+function ModalConfirmarEliminarPlantilla({ plantilla, onConfirm, onClose }) {
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 16, backdropFilter: 'blur(3px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{ background: 'white', borderRadius: 16, maxWidth: 400, width: '100%', padding: '32px 28px', textAlign: 'center', boxShadow: '0 24px 80px rgba(0,0,0,0.3)' }}>
+        <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>
+          🗑️
+        </div>
+        <h3 style={{ fontSize: 17, fontWeight: 800, color: '#DC2626', marginBottom: 8 }}>Eliminar plantilla</h3>
+        <p style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.6, marginBottom: 8 }}>
+          ¿Estás seguro que querés eliminar la plantilla <strong>"{plantilla.nombre}"</strong>?
+        </p>
+        <p style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 28 }}>
+          Esta acción <strong>no se puede deshacer</strong>. Los cronogramas ya creados con esta plantilla no se verán afectados.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button onClick={onClose}
+            style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>
+            Cancelar
+          </button>
+          <button onClick={onConfirm}
+            style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: '#DC2626', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(220,38,38,0.4)' }}>
+            Sí, eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Importador PDF con Claude API ─────────────────────────────────────────────
 function ImportadorPDF({ onEtapasImportadas }) {
   const fileRef = useRef()
-  const [estado,   setEstado]   = useState('idle') // idle | leyendo | listo | error
-  const [etapas,   setEtapas]   = useState([])
-  const [mensaje,  setMensaje]  = useState('')
+  const [estado,  setEstado]  = useState('idle')
+  const [etapas,  setEtapas]  = useState([])
+  const [mensaje, setMensaje] = useState('')
 
   const handleFile = async (e) => {
     const file = e.target.files[0]
     if (!file) return
     setEstado('leyendo')
     setMensaje('Analizando el presupuesto…')
-
     try {
-      // Convertir PDF a base64
       const base64 = await new Promise((res, rej) => {
         const r = new FileReader()
         r.onload = () => res(r.result.split(',')[1])
         r.onerror = () => rej(new Error('Error leyendo el archivo'))
         r.readAsDataURL(file)
       })
-
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -101,38 +131,17 @@ function ImportadorPDF({ onEtapasImportadas }) {
           messages: [{
             role: 'user',
             content: [
-              {
-                type: 'document',
-                source: { type: 'base64', media_type: 'application/pdf', data: base64 }
-              },
-              {
-                type: 'text',
-                text: `Analizá este presupuesto de obra y extraé las etapas principales (ítems numerados de primer nivel) con sus montos.
-
-Respondé SOLO con un JSON válido, sin texto adicional, sin backticks, con este formato exacto:
-[
-  { "nombre": "DEMOLICIÓN Y MOVIMIENTO DE SUELOS", "monto": 18564012 },
-  { "nombre": "ESTRUCTURA DE HORMIGÓN ARMADO", "monto": 32487000 }
-]
-
-Reglas:
-- Solo etapas de primer nivel (1, 2, 3... no 1.1, 1.2)
-- Si el monto es $0 o dice "no se cotiza", incluila con monto 0
-- El monto debe ser un número entero sin puntos ni comas
-- Máximo 20 etapas`
-              }
+              { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } },
+              { type: 'text', text: `Analizá este presupuesto de obra y extraé las etapas principales (ítems numerados de primer nivel) con sus montos.\n\nRespondé SOLO con un JSON válido, sin texto adicional, sin backticks, con este formato exacto:\n[\n  { "nombre": "DEMOLICIÓN Y MOVIMIENTO DE SUELOS", "monto": 18564012 },\n  { "nombre": "ESTRUCTURA DE HORMIGÓN ARMADO", "monto": 32487000 }\n]\n\nReglas:\n- Solo etapas de primer nivel (1, 2, 3... no 1.1, 1.2)\n- Si el monto es $0 o dice "no se cotiza", incluila con monto 0\n- El monto debe ser un número entero sin puntos ni comas\n- Máximo 20 etapas` }
             ]
           }]
         })
       })
-
       const data = await response.json()
       const text = (data.content || []).map(b => b.text || '').join('')
       const clean = text.replace(/```json|```/g, '').trim()
       const parsed = JSON.parse(clean)
-
       if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('No se encontraron etapas')
-
       setEtapas(parsed)
       setEstado('listo')
       setMensaje(`Se encontraron ${parsed.length} etapas`)
@@ -143,33 +152,24 @@ Reglas:
     }
   }
 
-  const handleConfirmar = () => {
-    onEtapasImportadas(etapas)
-  }
-
   const handleReintentar = () => {
-    setEstado('idle')
-    setEtapas([])
-    setMensaje('')
+    setEstado('idle'); setEtapas([]); setMensaje('')
     if (fileRef.current) fileRef.current.value = ''
   }
 
   return (
     <div>
       {estado === 'idle' && (
-        <div
-          onClick={() => fileRef.current?.click()}
-          style={{ border: '2px dashed #BFDBFE', borderRadius: 14, padding: '32px 24px', textAlign: 'center', cursor: 'pointer', background: '#F0F9FF', transition: 'background 0.15s' }}
+        <div onClick={() => fileRef.current?.click()}
+          style={{ border: '2px dashed #BFDBFE', borderRadius: 14, padding: '32px 24px', textAlign: 'center', cursor: 'pointer', background: '#F0F9FF' }}
           onMouseEnter={e => e.currentTarget.style.background = '#DBEAFE'}
-          onMouseLeave={e => e.currentTarget.style.background = '#F0F9FF'}
-        >
+          onMouseLeave={e => e.currentTarget.style.background = '#F0F9FF'}>
           <div style={{ fontSize: 40, marginBottom: 10 }}>📄</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#1D4ED8', marginBottom: 6 }}>Subir presupuesto PDF</div>
           <div style={{ fontSize: 12, color: '#3B82F6' }}>Claude va a leer el PDF y extraer las etapas y montos automáticamente</div>
           <div style={{ fontSize: 11, color: '#93C5FD', marginTop: 6 }}>Solo PDFs generados por ARMAR</div>
         </div>
       )}
-
       {estado === 'leyendo' && (
         <div style={{ border: '1px solid #BFDBFE', borderRadius: 14, padding: '32px 24px', textAlign: 'center', background: '#F0F9FF' }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>⏳</div>
@@ -177,27 +177,19 @@ Reglas:
           <div style={{ fontSize: 12, color: '#3B82F6' }}>Claude está leyendo las etapas y montos</div>
         </div>
       )}
-
       {estado === 'error' && (
         <div style={{ border: '1px solid #FCA5A5', borderRadius: 14, padding: '24px', textAlign: 'center', background: '#FFF5F5' }}>
           <div style={{ fontSize: 32, marginBottom: 8 }}>⚠️</div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#DC2626', marginBottom: 12 }}>{mensaje}</div>
-          <button onClick={handleReintentar}
-            style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#DC2626', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 12, fontFamily: 'inherit' }}>
-            Intentar de nuevo
-          </button>
+          <button onClick={handleReintentar} style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: '#DC2626', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 12, fontFamily: 'inherit' }}>Intentar de nuevo</button>
         </div>
       )}
-
       {estado === 'listo' && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
             <span style={{ fontSize: 16 }}>✅</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#10B981' }}>{mensaje}</span>
-            <button onClick={handleReintentar}
-              style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 6, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-500)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-              Cambiar PDF
-            </button>
+            <button onClick={handleReintentar} style={{ marginLeft: 'auto', padding: '4px 12px', borderRadius: 6, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-500)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>Cambiar PDF</button>
           </div>
           <div style={{ border: '1px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden', marginBottom: 14, maxHeight: 300, overflowY: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', background: 'var(--gray-100)', padding: '8px 12px', fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--gray-200)' }}>
@@ -206,31 +198,38 @@ Reglas:
             {etapas.map((et, i) => (
               <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto', padding: '10px 12px', borderBottom: i < etapas.length - 1 ? '1px solid var(--gray-200)' : 'none', background: i % 2 === 0 ? 'white' : '#FAFAFA' }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-800)' }}>{et.nombre}</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: et.monto > 0 ? 'var(--orange)' : 'var(--gray-300)', textAlign: 'right' }}>
-                  {et.monto > 0 ? '$' + et.monto.toLocaleString('es-AR') : '—'}
-                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: et.monto > 0 ? 'var(--orange)' : 'var(--gray-300)', textAlign: 'right' }}>{et.monto > 0 ? '$' + et.monto.toLocaleString('es-AR') : '—'}</span>
               </div>
             ))}
           </div>
-          <button onClick={handleConfirmar}
-            style={{ width: '100%', padding: '11px', borderRadius: 9, border: 'none', background: '#3B82F6', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(59,130,246,0.4)' }}>
+          <button onClick={() => onEtapasImportadas(etapas)} style={{ width: '100%', padding: '11px', borderRadius: 9, border: 'none', background: '#3B82F6', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(59,130,246,0.4)' }}>
             Usar estas etapas →
           </button>
         </div>
       )}
-
       <input ref={fileRef} type="file" accept="application/pdf" style={{ display: 'none' }} onChange={handleFile} />
     </div>
   )
 }
 
 // ── Paso 1: Tipo ──────────────────────────────────────────────────────────────
-function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, setNombre, templates, onEtapasImportadas }) {
+function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, setNombre, templates, setTemplates, onEtapasImportadas }) {
+  const [gestionando, setGestionando]               = useState(false)
+  const [plantillaAEliminar, setPlantillaAEliminar] = useState(null)
+
   const inputStyleLocal = {
     width: '100%', padding: '9px 12px', borderRadius: 8,
     border: '1px solid var(--gray-200)', fontSize: 14,
     color: 'var(--gray-800)', fontFamily: 'inherit',
     background: 'white', boxSizing: 'border-box', fontWeight: 600,
+  }
+
+  const handleEliminarPlantilla = (tmpl) => {
+    const nuevas = templates.filter(t => t.id !== tmpl.id)
+    saveTemplates(nuevas)
+    setTemplates(nuevas)
+    if (selectedTemplate?.id === tmpl.id) setSelectedTemplate(null)
+    setPlantillaAEliminar(null)
   }
 
   return (
@@ -253,7 +252,7 @@ function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, s
             { key: 'pdf',      label: '📄 Importar PDF' },
           ].map(({ key, label }) => (
             <button key={key}
-              onClick={() => { setMode(key); if (key !== 'template') setSelectedTemplate(null) }}
+              onClick={() => { setMode(key); if (key !== 'template') { setSelectedTemplate(null); setGestionando(false) } }}
               style={{
                 flex: 1, minWidth: 120, padding: '10px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700,
                 cursor: 'pointer', fontFamily: 'inherit',
@@ -268,19 +267,78 @@ function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, s
         </div>
 
         {mode === 'template' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-            {templates.map(tmpl => {
-              const sel = selectedTemplate?.id === tmpl.id
-              return (
-                <div key={tmpl.id} onClick={() => setSelectedTemplate(tmpl)}
-                  style={{ padding: '14px 16px', borderRadius: 10, cursor: 'pointer', border: sel ? '2px solid var(--orange)' : '1px solid var(--gray-200)', background: sel ? '#FFF7ED' : 'white', boxShadow: sel ? '0 2px 8px rgba(249,115,22,0.15)' : '0 1px 3px rgba(0,0,0,0.05)', transition: 'all 0.15s' }}>
-                  <div style={{ fontSize: 26, marginBottom: 6 }}>{tmpl.icono}</div>
-                  <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--gray-800)', marginBottom: 3 }}>{tmpl.nombre}</div>
-                  <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{tmpl.duracionEstimada}</div>
-                </div>
-              )
-            })}
-          </div>
+          <>
+            {/* Header con toggle gestionar */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--gray-500)' }}>
+                {templates.length} plantilla{templates.length !== 1 ? 's' : ''} disponible{templates.length !== 1 ? 's' : ''}
+              </span>
+              <button
+                onClick={() => setGestionando(g => !g)}
+                style={{
+                  padding: '5px 12px', borderRadius: 6, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+                  border: gestionando ? 'none' : '1px solid var(--gray-200)',
+                  background: gestionando ? '#FEE2E2' : 'white',
+                  color: gestionando ? '#DC2626' : 'var(--gray-500)',
+                }}
+              >
+                {gestionando ? '✓ Listo' : '🗑 Gestionar'}
+              </button>
+            </div>
+
+            {templates.length === 0 ? (
+              <div style={{ padding: '32px 24px', textAlign: 'center', border: '1px dashed var(--gray-300)', borderRadius: 12, color: 'var(--gray-400)', fontSize: 13 }}>
+                <div style={{ fontSize: 36, marginBottom: 8 }}>📋</div>
+                No hay plantillas disponibles.<br />Creá un cronograma desde cero para empezar.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                {templates.map(tmpl => {
+                  const sel = selectedTemplate?.id === tmpl.id
+                  return (
+                    <div key={tmpl.id}
+                      onClick={() => { if (!gestionando) setSelectedTemplate(tmpl) }}
+                      style={{
+                        padding: '14px 16px', borderRadius: 10, cursor: gestionando ? 'default' : 'pointer',
+                        border: sel && !gestionando ? '2px solid var(--orange)' : gestionando ? '1.5px solid #FECACA' : '1px solid var(--gray-200)',
+                        background: sel && !gestionando ? '#FFF7ED' : gestionando ? '#FFF5F5' : 'white',
+                        boxShadow: sel && !gestionando ? '0 2px 8px rgba(249,115,22,0.15)' : '0 1px 3px rgba(0,0,0,0.05)',
+                        transition: 'all 0.15s',
+                        position: 'relative',
+                      }}>
+                      {/* Botón eliminar en modo gestionar */}
+                      {gestionando && (
+                        <button
+                          onClick={e => { e.stopPropagation(); setPlantillaAEliminar(tmpl) }}
+                          style={{
+                            position: 'absolute', top: 8, right: 8,
+                            width: 24, height: 24, borderRadius: '50%',
+                            border: 'none', background: '#DC2626', color: 'white',
+                            cursor: 'pointer', fontSize: 14, fontWeight: 700,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            lineHeight: 1, boxShadow: '0 1px 4px rgba(220,38,38,0.4)',
+                          }}
+                          title="Eliminar plantilla"
+                        >
+                          ×
+                        </button>
+                      )}
+                      <div style={{ fontSize: 26, marginBottom: 6 }}>{tmpl.icono}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: gestionando ? '#DC2626' : 'var(--gray-800)', marginBottom: 3 }}>{tmpl.nombre}</div>
+                      <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{tmpl.duracionEstimada}</div>
+                      <div style={{ fontSize: 10, color: 'var(--gray-400)', marginTop: 4 }}>{tmpl.etapas.length} etapas</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {gestionando && templates.length > 0 && (
+              <div style={{ marginTop: 10, padding: '8px 12px', background: '#FFF5F5', border: '1px solid #FECACA', borderRadius: 8, fontSize: 11, color: '#DC2626', fontWeight: 600 }}>
+                ⚠ Modo gestión activo — hacé clic en × para eliminar una plantilla
+              </div>
+            )}
+          </>
         )}
 
         {mode === 'scratch' && (
@@ -295,7 +353,7 @@ function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, s
         )}
       </div>
 
-      {selectedTemplate && mode === 'template' && (
+      {selectedTemplate && mode === 'template' && !gestionando && (
         <div style={{ width: 240, flexShrink: 0 }}>
           <div style={{ background: '#FFF7ED', borderRadius: 12, border: '1px solid #FED7AA', padding: '16px', height: '100%' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>{selectedTemplate.icono}</div>
@@ -308,13 +366,20 @@ function Step1({ mode, setMode, selectedTemplate, setSelectedTemplate, nombre, s
                 <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                   <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--orange)', flexShrink: 0 }} />
                   <span style={{ fontSize: 11, color: 'var(--gray-700)' }}>{et.nombre}</span>
-                  {et.esCritica && <span style={{ fontSize: 9, color: '#DC2626', fontWeight: 700 }}>●</span>}
                 </div>
               ))}
             </div>
-            <div style={{ fontSize: 9, color: 'var(--gray-400)', marginTop: 8 }}>● = tarea crítica</div>
           </div>
         </div>
+      )}
+
+      {/* Modal confirmación eliminar */}
+      {plantillaAEliminar && (
+        <ModalConfirmarEliminarPlantilla
+          plantilla={plantillaAEliminar}
+          onClose={() => setPlantillaAEliminar(null)}
+          onConfirm={() => handleEliminarPlantilla(plantillaAEliminar)}
+        />
       )}
     </div>
   )
@@ -409,7 +474,6 @@ function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, templat
         </div>
       </div>
 
-      {/* Panel derecho según modo */}
       {mode === 'template' && etapas.length > 0 && (
         <div style={{ width: 240, flexShrink: 0 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -427,7 +491,6 @@ function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, templat
                   <input type="checkbox" checked={checked} onChange={() => toggleEtapa(et.nombre)} style={{ accentColor: 'var(--orange)', width: 14, height: 14 }} />
                   <span style={{ fontSize: 12, color: 'var(--gray-700)', flex: 1 }}>{et.nombre}</span>
                   <span style={{ fontSize: 10, color: 'var(--gray-400)' }}>{et.duracionDias}d</span>
-                  {et.esCritica && <span style={{ fontSize: 9, color: '#DC2626', fontWeight: 700 }}>●</span>}
                 </label>
               )
             })}
@@ -449,7 +512,7 @@ function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, templat
               </div>
             ))}
           </div>
-          <button onClick={() => { setShowMiniModal(true) }}
+          <button onClick={() => setShowMiniModal(true)}
             style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px dashed var(--orange)', background: 'white', color: 'var(--orange)', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
             + Nueva etapa
           </button>
@@ -462,8 +525,7 @@ function Step2({ params, setParams, etapasIncluidas, setEtapasIncluidas, templat
                   if (e.key === 'Escape') { setShowMiniModal(false); setMiniNombre('') }
                 }}
                 placeholder="Ej: Obra gruesa"
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8, outline: 'none' }}
-              />
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box', marginBottom: 8, outline: 'none' }} />
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => { setShowMiniModal(false); setMiniNombre('') }}
                   style={{ flex: 1, padding: '7px', borderRadius: 7, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-600)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancelar</button>
@@ -545,13 +607,10 @@ function Step3({ previewEtapas, setPreviewEtapas, totalTareas, params }) {
                 return (
                   <>
                     <tr key={et.id} onClick={() => setEditingEtapa(et)}
-                      style={{ borderBottom: '1px solid var(--gray-200)', cursor: 'pointer', transition: 'background 0.1s' }}
+                      style={{ borderBottom: '1px solid var(--gray-200)', cursor: 'pointer' }}
                       onMouseEnter={e => e.currentTarget.style.background = '#FFF7ED'}
                       onMouseLeave={e => e.currentTarget.style.background = 'white'}>
-                      <td style={{ padding: '9px 12px', fontWeight: 700, color: 'var(--gray-800)' }}>
-                        {et.esCritica && <span style={{ color: '#DC2626', marginRight: 4 }}>●</span>}
-                        {et.nombre}
-                      </td>
+                      <td style={{ padding: '9px 12px', fontWeight: 700, color: 'var(--gray-800)' }}>{et.nombre}</td>
                       <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--gray-600)' }}>{fmtShort(et.fechaInicio)}</td>
                       <td style={{ padding: '9px 12px', fontSize: 12, color: 'var(--gray-600)' }}>{fmtShort(et.fechaFin || calcFechaFin(et.fechaInicio, et.duracionDias))}</td>
                       <td style={{ padding: '9px 12px', textAlign: 'center' }}>
@@ -621,12 +680,12 @@ function Step3({ previewEtapas, setPreviewEtapas, totalTareas, params }) {
 
 // ── Modal principal ───────────────────────────────────────────────────────────
 export default function ModalCrearCronograma({ project, teamMembers, onClose, onCrear }) {
-  const [step, setStep]         = useState(1)
-  const [nombre, setNombre]     = useState('')
-  const [mode, setMode]         = useState('template')
+  const [step, setStep]     = useState(1)
+  const [nombre, setNombre] = useState('')
+  const [mode, setMode]     = useState('template')
   const [selectedTemplate, setSelectedTemplate] = useState(null)
-  const [templates]             = useState(() => loadTemplates())
-  const [params, setParams]     = useState({
+  const [templates, setTemplates]               = useState(() => loadTemplates())
+  const [params, setParams] = useState({
     autorCronograma: '',
     fechaInicio: project.startDate || '',
     fechaFin: '',
@@ -649,10 +708,6 @@ export default function ModalCrearCronograma({ project, teamMembers, onClose, on
     setEtapasIncluidas(tmpl.etapas.map(et => et.nombre))
   }
 
-  const handleEtapasImportadas = (etapas) => {
-    setPdfEtapas(etapas)
-  }
-
   const totalTareas = useMemo(() => {
     if (mode === 'scratch') return scratchEtapas.length
     if (mode === 'pdf') return pdfEtapas.length
@@ -672,22 +727,10 @@ export default function ModalCrearCronograma({ project, teamMembers, onClose, on
         const fi = cursor
         const ff = i === total - 1 ? params.fechaFin : calcFechaFin(cursor, dur)
         cursor = addBusinessDays(ff, 1)
-        return {
-          id: i + 1, nombre: et.nombre,
-          fechaInicio: fi, fechaFin: ff,
-          duracionDias: dur,
-          pesoRelativo: params.pesosAuto ? Math.round(100 / total) : 10,
-          presupuesto: et.monto > 0 ? et.monto : null,
-          parentId: null, dependeDeId: null,
-          tipoVinculo: 'Fin a inicio', desfaseDias: 0,
-          avanceActual: 0, estado: 'Pendiente', esCritica: false,
-          adicionales: [],
-        }
+        return { id: i + 1, nombre: et.nombre, fechaInicio: fi, fechaFin: ff, duracionDias: dur, pesoRelativo: params.pesosAuto ? Math.round(100 / total) : 10, presupuesto: et.monto > 0 ? et.monto : null, parentId: null, dependeDeId: null, tipoVinculo: 'Fin a inicio', desfaseDias: 0, avanceActual: 0, estado: 'Pendiente', esCritica: false, adicionales: [] }
       })
-      setPreviewEtapas(etapas)
-      return
+      setPreviewEtapas(etapas); return
     }
-
     if (mode === 'scratch') {
       if (!scratchEtapas.length || !params.fechaInicio || !params.fechaFin) { setPreviewEtapas([]); return }
       const total = scratchEtapas.length
@@ -701,10 +744,8 @@ export default function ModalCrearCronograma({ project, teamMembers, onClose, on
         cursor = addBusinessDays(ff, 1)
         return { id: i + 1, nombre, fechaInicio: fi, fechaFin: ff, duracionDias: dur, pesoRelativo: params.pesosAuto ? Math.round(100 / total) : 10, parentId: null, dependeDeId: null, tipoVinculo: 'Fin a inicio', desfaseDias: 0 }
       })
-      setPreviewEtapas(etapas)
-      return
+      setPreviewEtapas(etapas); return
     }
-
     const tareas = generarTareasDesdeTemplate(selectedTemplate, etapasIncluidas, project.id, params.fechaInicio, params.fechaFin)
     setPreviewEtapas(tareas.filter(t => t.parentId === null))
   }
@@ -772,8 +813,13 @@ export default function ModalCrearCronograma({ project, teamMembers, onClose, on
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
           {step === 1 && (
-            <Step1 mode={mode} setMode={setMode} selectedTemplate={selectedTemplate} setSelectedTemplate={handleSelectTemplate}
-              nombre={nombre} setNombre={setNombre} templates={templates} onEtapasImportadas={handleEtapasImportadas} />
+            <Step1
+              mode={mode} setMode={setMode}
+              selectedTemplate={selectedTemplate} setSelectedTemplate={handleSelectTemplate}
+              nombre={nombre} setNombre={setNombre}
+              templates={templates} setTemplates={setTemplates}
+              onEtapasImportadas={(etapas) => setPdfEtapas(etapas)}
+            />
           )}
           {step === 2 && (
             <Step2 params={params} setParams={setParams}
