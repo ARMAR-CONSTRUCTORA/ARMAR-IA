@@ -433,7 +433,7 @@ export default function PresupuestosTab({ proyecto }) {
         <div>
           <div style={s.title}>Presupuesto</div>
           <div style={s.subtitle}>
-            {proyecto?.nombre || "Obra"} · Versión {presupuesto?.numero_version || 1} · {presupuesto?.estado_version || "borrador"}
+            {proyecto?.name || proyecto?.nombre || "Obra"}· Versión {presupuesto?.numero_version || 1} · {presupuesto?.estado_version || "borrador"}
           </div>
         </div>
 
