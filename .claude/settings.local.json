@@ -10,5 +10,17 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"Recordatorio: acordate de crear el PR en GitHub antes de cerrar la sesion. Rama actual: claude/github-repo-connection-kibv1t → main\"}'"
+          }
+        ]
+      }
+    ]
   }
 }
