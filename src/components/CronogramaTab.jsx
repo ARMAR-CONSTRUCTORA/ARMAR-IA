@@ -347,48 +347,106 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   return (
     <div ref={scrollRef} data-gantt-scroll style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: 12, border: '1px solid var(--gray-200)', background: 'white' }}>
       <div data-gantt-content style={{ minWidth: TABLE_W + timelineW + (structuralMode ? 32 : 0) }}>
-        <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: '2px solid var(--gray-200)', position: 'sticky', top: 0, zIndex: 10 }}>
-          {[
-            { label: 'Etapa / Tarea', w: COL_NOMBRE, sticky: true },
-            { label: 'Inicio',        w: COL_INICIO },
-            { label: 'Fin Est.',      w: COL_FIN },
-            { label: 'Duración',      w: COL_DIAS },
-            { label: 'Avance',        w: COL_AVANCE },
-            { label: 'Estado',        w: COL_ESTADO },
-            { label: 'Presupuesto',   w: COL_PRESUP },
-            { label: 'Adicionales',   w: COL_ADIC },
-            { label: 'Subtotal',      w: COL_SUBTOTAL },
-            { label: 'Pagos',         w: COL_PAGOS },
-            { label: 'Saldo',         w: COL_SALDO },
-          ].map(col => (
-            <div key={col.label} style={{
-              ...cellStyle(col.w, col.sticky),
-              display: 'flex', alignItems: 'center', paddingLeft: col.sticky ? 14 : 5,
-              fontSize: 9, fontWeight: 700, color: 'var(--gray-500)',
-              textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F3F4F6',
-              ...(col.sticky ? { borderRight: '2px solid var(--gray-200)' } : {}),
-            }}>
-              {col.label}
+        <div style={{ position: 'sticky', top: 0, zIndex: 10 }}>
+          <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: ppd >= 5.5 ? '1px solid var(--gray-200)' : '2px solid var(--gray-200)' }}>
+            {[
+              { label: 'Etapa / Tarea', w: COL_NOMBRE, sticky: true },
+              { label: 'Inicio',        w: COL_INICIO },
+              { label: 'Fin Est.',      w: COL_FIN },
+              { label: 'Duración',      w: COL_DIAS },
+              { label: 'Avance',        w: COL_AVANCE },
+              { label: 'Estado',        w: COL_ESTADO },
+              { label: 'Presupuesto',   w: COL_PRESUP },
+              { label: 'Adicionales',   w: COL_ADIC },
+              { label: 'Subtotal',      w: COL_SUBTOTAL },
+              { label: 'Pagos',         w: COL_PAGOS },
+              { label: 'Saldo',         w: COL_SALDO },
+            ].map(col => (
+              <div key={col.label} style={{
+                ...cellStyle(col.w, col.sticky),
+                display: 'flex', alignItems: 'center', paddingLeft: col.sticky ? 14 : 5,
+                fontSize: 9, fontWeight: 700, color: 'var(--gray-500)',
+                textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F3F4F6',
+                ...(col.sticky ? { borderRight: '2px solid var(--gray-200)' } : {}),
+              }}>
+                {col.label}
+              </div>
+            ))}
+            <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: '#F3F4F6' }}>
+              {months.map((m, i) => {
+                const next  = months[i + 1]
+                const left  = Math.max(0, (m - minDate) / 86400000 * ppd)
+                const width = next ? Math.max(0, (next - minDate) / 86400000 * ppd) - left : timelineW - left
+                return (
+                  <div key={i} style={{ position: 'absolute', left, width, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', paddingLeft: 4, overflow: 'hidden' }}>
+                    {width > 18 && <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{m.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })}</span>}
+                  </div>
+                )
+              })}
+              {todayX > 0 && todayX < timelineW && (
+                <div style={{ position: 'absolute', left: todayX, top: 0, bottom: 0, zIndex: 4, borderLeft: '2px solid var(--orange)', pointerEvents: 'none' }}>
+                  <div style={{ position: 'absolute', top: 3, left: 4, background: 'var(--orange)', color: 'white', fontSize: 7, fontWeight: 700, padding: '1px 4px', borderRadius: 3 }}>HOY</div>
+                </div>
+              )}
             </div>
-          ))}
-          <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: '#F3F4F6' }}>
-            {months.map((m, i) => {
-              const next  = months[i + 1]
-              const left  = Math.max(0, (m - minDate) / 86400000 * ppd)
-              const width = next ? Math.max(0, (next - minDate) / 86400000 * ppd) - left : timelineW - left
+            {structuralMode && <div style={{ width: 32, background: '#F3F4F6' }} />}
+          </div>
+          {ppd >= 5.5 && (() => {
+            const SUB_H = 20
+            const dayInitials = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
+            if (ppd >= 12) {
+              const days = []
+              const cur = new Date(minDate)
+              while (cur <= maxDate) {
+                days.push({ num: cur.getDate(), initial: dayInitials[cur.getDay()], left: (cur - minDate) / 86400000 * ppd, isWeekend: cur.getDay() === 0 || cur.getDay() === 6 })
+                cur.setDate(cur.getDate() + 1)
+              }
               return (
-                <div key={i} style={{ position: 'absolute', left, width, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', paddingLeft: 4, overflow: 'hidden' }}>
-                  {width > 18 && <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{m.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })}</span>}
+                <div style={{ display: 'flex', height: SUB_H, background: '#FAFAFA', borderBottom: '2px solid var(--gray-200)' }}>
+                  <div style={{ ...cellStyle(COL_NOMBRE, true), background: '#FAFAFA', borderRight: '2px solid var(--gray-200)' }} />
+                  <div style={{ width: TABLE_W - COL_NOMBRE, flexShrink: 0, background: '#FAFAFA' }} />
+                  <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: '#FAFAFA', overflow: 'hidden' }}>
+                    {days.map((d, i) => (
+                      <div key={i} style={{ position: 'absolute', left: d.left, width: ppd, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: d.isWeekend ? '#F3F4F6' : '#FAFAFA' }}>
+                        {ppd > 14 && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gray-400)', lineHeight: 1 }}>{d.num}</span>}
+                        <span style={{ fontSize: 7, color: 'var(--gray-400)', lineHeight: 1 }}>{d.initial}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {structuralMode && <div style={{ width: 32, background: '#FAFAFA' }} />}
                 </div>
               )
-            })}
-            {todayX > 0 && todayX < timelineW && (
-              <div style={{ position: 'absolute', left: todayX, top: 0, bottom: 0, zIndex: 4, borderLeft: '2px solid var(--orange)', pointerEvents: 'none' }}>
-                <div style={{ position: 'absolute', top: 3, left: 4, background: 'var(--orange)', color: 'white', fontSize: 7, fontWeight: 700, padding: '1px 4px', borderRadius: 3 }}>HOY</div>
-              </div>
-            )}
-          </div>
-          {structuralMode && <div style={{ width: 32, background: '#F3F4F6' }} />}
+            } else {
+              const weekBlocks = []
+              months.forEach(m => {
+                const year = m.getFullYear(), month = m.getMonth()
+                const daysInMonth = new Date(year, month + 1, 0).getDate()
+                let weekNum = 1
+                for (let d = 1; d <= daysInMonth; d += 7) {
+                  const start = new Date(year, month, d)
+                  const endDay = Math.min(d + 6, daysInMonth)
+                  const left = Math.max(0, (start - minDate) / 86400000 * ppd)
+                  const width = (endDay - d + 1) * ppd
+                  weekBlocks.push({ label: `S${weekNum}`, left, width })
+                  weekNum++
+                }
+              })
+              return (
+                <div style={{ display: 'flex', height: SUB_H, background: '#FAFAFA', borderBottom: '2px solid var(--gray-200)' }}>
+                  <div style={{ ...cellStyle(COL_NOMBRE, true), background: '#FAFAFA', borderRight: '2px solid var(--gray-200)' }} />
+                  <div style={{ width: TABLE_W - COL_NOMBRE, flexShrink: 0, background: '#FAFAFA' }} />
+                  <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: '#FAFAFA', overflow: 'hidden' }}>
+                    {weekBlocks.map((wb, i) => (
+                      <div key={i} style={{ position: 'absolute', left: wb.left, width: wb.width, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                        {wb.width > 12 && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gray-400)' }}>{wb.label}</span>}
+                      </div>
+                    ))}
+                  </div>
+                  {structuralMode && <div style={{ width: 32, background: '#FAFAFA' }} />}
+                </div>
+              )
+            }
+          })()}
         </div>
         <div style={{ position: 'relative' }}>
           {etapas.map(etapa => {
