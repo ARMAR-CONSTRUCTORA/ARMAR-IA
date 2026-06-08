@@ -8,6 +8,8 @@ import ProjectModal from './components/ProjectModal'
 import ConfigPage from './components/ConfigPage'
 import CronogramasPage from './components/CronogramasPage'
 import EquipoPage from './components/EquipoPage'
+import ProyectosPage from './components/ProyectosPage'
+import CalendarioPage from './components/CalendarioPage'
 import LoginModal from './components/LoginModal'
 import PresupuestosTab from './components/PresupuestosTab'
 
@@ -23,9 +25,11 @@ const SESSION_KEY = 'armar-ia-user'
 const PAGE_TITLES = {
   dashboard:     'Dashboard',
   obras:         'Obras',
+  proyectos:     'Proyectos',
   cronogramas:   'Cronogramas',
   presupuestos:  'Presupuestos',
   equipo:        'Equipo',
+  calendario:    'Calendario',
   documentos:    'Documentos',
   configuracion: 'Configuración',
 }
@@ -369,6 +373,9 @@ function App() {
           </div>
         )
 
+      case 'proyectos':
+        return <ProyectosPage isEditor={isEditor} />
+
       case 'equipo':
         return (
           <EquipoPage
@@ -380,6 +387,9 @@ function App() {
             isEditor={isEditor}
           />
         )
+
+      case 'calendario':
+        return <CalendarioPage />
 
       case 'configuracion':
         return <ConfigPage />

@@ -4,17 +4,19 @@ const NAV_GROUPS = [
   {
     label: 'Principal',
     items: [
-      { id: 'dashboard', label: 'Dashboard', icon: '📊' },
-      { id: 'obras', label: 'Obras', icon: '🏗️' },
+      { id: 'dashboard',  label: 'Dashboard',  icon: '📊' },
+      { id: 'obras',      label: 'Obras',       icon: '🏗️' },
+      { id: 'proyectos',  label: 'Proyectos',   icon: '📐' },
     ],
   },
 
   {
     label: 'Gestión',
     items: [
-      { id: 'cronogramas', label: 'Cronogramas', icon: '📅' },
+      { id: 'cronogramas',  label: 'Cronogramas',  icon: '📋' },
       { id: 'presupuestos', label: 'Presupuestos', icon: '💰' },
-      { id: 'equipo', label: 'Equipo', icon: '👥' },
+      { id: 'equipo',       label: 'Equipo',       icon: '👥' },
+      { id: 'calendario',   label: 'Calendario',   icon: '📅' },
     ],
   },
 

@@ -1,4 +1,5 @@
 import { useBreakpoint } from '../hooks/useBreakpoint'
+import { CalendarioTab } from './CalendarioPage'
 
 const STATUS = {
   activa:    { label: 'Activa',    color: '#059669', bg: '#D1FAE5' },
@@ -277,6 +278,9 @@ function Dashboard({ projects, onAdd, onNavigateToObras, isEditor }) {
               ))}
             </div>
           )}
+
+          {/* Mini calendario */}
+          <CalendarioTab compact />
         </div>
       </div>
     </div>
