@@ -1212,7 +1212,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} isEditor={isEditor} />
       <HistorialCertificados certificados={certificados} isEditor={isEditor} />
 
-      {showCrearModal && <ModalCrearCronograma project={project} onClose={() => setShowCrearModal(false)} onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />}
+      {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />}
       {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} onClose={() => setShowAvanceModal(false)} onGuardar={(pid, informe, tareasActualizadas) => { onCargarAvance(pid, cronograma.id, informe, tareasActualizadas); setShowAvanceModal(false) }} />}
       {showCertModal && <ModalCertificado tareas={tareas} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
       {editingTarea && (
