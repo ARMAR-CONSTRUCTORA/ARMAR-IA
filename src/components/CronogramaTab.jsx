@@ -237,6 +237,14 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     ...(isSticky ? { position: 'sticky', left: 0, zIndex: 3, boxShadow: '2px 0 4px rgba(0,0,0,0.04)' } : {}),
   })
 
+  const numMap = {}
+  etapas.forEach((etapa, i) => {
+    numMap[etapa.id] = `${i + 1}.`
+    tareas.filter(t => t.parentId === etapa.id).forEach((hijo, j) => {
+      numMap[hijo.id] = `${i + 1}.${j + 1}`
+    })
+  })
+
   const renderRow = (tarea, isSubtarea = false) => {
     const indent      = isSubtarea ? 20 : 0
     const avance      = tarea.parentId === null ? calcAvanceEtapa(tareas, tarea.id) : tarea.avanceActual
@@ -265,6 +273,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
           )}
           <span style={{ fontSize: 11, fontWeight: isSubtarea ? 400 : 700, color: 'var(--gray-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {tarea.esCritica && <span style={{ color: '#DC2626', marginRight: 3 }}>●</span>}
+            <span style={{ color: 'var(--gray-400)', fontWeight: 400, marginRight: 4 }}>{numMap[tarea.id]}</span>
             {tarea.nombre}
           </span>
         </div>
