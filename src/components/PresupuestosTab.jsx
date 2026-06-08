@@ -1,3 +1,5 @@
+import { useState, useMemo, useEffect } from "react";
+
 import {
   getPresupuestoVigente,
   crearPresupuestoBase,
@@ -26,7 +28,6 @@ const orangeLight = "#FFF3EB";
 const green = "#2D7A4F";
 const greenLight = "#EBF7F1";
 const red = "#C0392B";
-const redLight = "#FDECEA";
 const blue = "#2563EB";
 const blueLight = "#EFF6FF";
 const dark = "#1A1A1A";
@@ -40,9 +41,7 @@ function toARS(monto, moneda, usdRate) {
 
 function formatMoney(n, moneda = "ARS") {
   const value = Number(n || 0);
-  if (moneda === "USD") {
-    return `U$D ${value.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
-  }
+  if (moneda === "USD") return `U$D ${value.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
   return `$ ${Math.round(value).toLocaleString("es-AR")}`;
 }
 
@@ -62,7 +61,7 @@ function calcTotalesCapitulo(cap, usdRate) {
   let costoPresupuestado = 0;
   let costoReal = 0;
 
-  cap.items.forEach((item) => {
+  (cap.items || []).forEach((item) => {
     cliente += toARS(item.precioCliente * item.cantidad, item.moneda, usdRate);
     costoPresupuestado += toARS(item.costoPresupuestado * item.cantidad, item.moneda, usdRate);
     costoReal += getCostoRealARS(item, usdRate);
@@ -73,15 +72,7 @@ function calcTotalesCapitulo(cap, usdRate) {
   const desvio = costoReal - costoPresupuestado;
   const desvioPct = costoPresupuestado > 0 ? (desvio / costoPresupuestado) * 100 : 0;
 
-  return {
-    cliente,
-    costoPresupuestado,
-    costoReal,
-    margen,
-    margenPct,
-    desvio,
-    desvioPct,
-  };
+  return { cliente, costoPresupuestado, costoReal, margen, margenPct, desvio, desvioPct };
 }
 
 function colorDesvio(pct) {
@@ -93,7 +84,7 @@ function colorDesvio(pct) {
 function bgDesvio(pct) {
   if (pct <= 0) return greenLight;
   if (pct <= 10) return orangeLight;
-  return redLight;
+  return "#FDECEA";
 }
 
 const s = {
@@ -162,30 +153,34 @@ const s = {
 function mapDBPresupuesto(data) {
   return {
     ...data,
-    capitulos: (data.presupuesto_capitulos || [])
-      .sort((a, b) => a.orden - b.orden)
+    id: data.id,
+    numeroVersion: data.numeroVersion || data.numero_version || 1,
+    estadoVersion: data.estadoVersion || data.estado_version || "borrador",
+    usdRate: data.usdRate || data.usd_rate || USD_RATE_DEFAULT,
+    capitulos: (data.capitulos || data.presupuesto_capitulos || [])
+      .sort((a, b) => (a.orden || 0) - (b.orden || 0))
       .map((cap) => ({
         id: cap.id,
-        nombre: cap.nombre,
-        etapaId: cap.etapa_id,
-        items: (cap.presupuesto_items || [])
-          .sort((a, b) => a.orden - b.orden)
+        nombre: cap.nombre || "",
+        etapaId: cap.etapaId || cap.etapa_id || null,
+        items: (cap.items || cap.presupuesto_items || [])
+          .sort((a, b) => (a.orden || 0) - (b.orden || 0))
           .map((it) => ({
             id: it.id,
-            descripcion: it.descripcion,
-            unidad: it.unidad,
+            descripcion: it.descripcion || "",
+            unidad: it.unidad || "",
             cantidad: Number(it.cantidad || 0),
-            precioCliente: Number(it.precio_cliente || 0),
-            costoPresupuestado: Number(it.costo_presupuestado || 0),
-            costoContratado: Number(it.costo_contratado || 0),
-            costoComprado: Number(it.costo_comprado || 0),
-            costoFacturado: Number(it.costo_facturado || 0),
-            costoPagado: Number(it.costo_pagado || 0),
+            precioCliente: Number(it.precioCliente || it.precio_cliente || 0),
+            costoPresupuestado: Number(it.costoPresupuestado || it.costo_presupuestado || 0),
+            costoContratado: Number(it.costoContratado || it.costo_contratado || 0),
+            costoComprado: Number(it.costoComprado || it.costo_comprado || 0),
+            costoFacturado: Number(it.costoFacturado || it.costo_facturado || 0),
+            costoPagado: Number(it.costoPagado || it.costo_pagado || 0),
             moneda: it.moneda || "ARS",
-            estadoItem: it.estado_item || "previsto",
-            etapaId: it.etapa_id,
-            tareaId: it.tarea_id,
-            hitoId: it.hito_id,
+            estadoItem: it.estadoItem || it.estado_item || "previsto",
+            etapaId: it.etapaId || it.etapa_id || null,
+            tareaId: it.tareaId || it.tarea_id || null,
+            hitoId: it.hitoId || it.hito_id || null,
           })),
       })),
   };
@@ -198,10 +193,8 @@ function ItemRow({ item, vista, usdRate, onUpdate, onDelete }) {
   const subtotalCliente = toARS(item.precioCliente * item.cantidad, item.moneda, usdRate);
   const subtotalPresupuestado = toARS(item.costoPresupuestado * item.cantidad, item.moneda, usdRate);
   const costoReal = getCostoRealARS(item, usdRate);
-  const desvio = costoReal - subtotalPresupuestado;
-  const desvioPct = subtotalPresupuestado > 0 ? (desvio / subtotalPresupuestado) * 100 : 0;
-  const margen = subtotalCliente - subtotalPresupuestado;
-  const margenPct = subtotalCliente > 0 ? (margen / subtotalCliente) * 100 : 0;
+  const desvioPct = subtotalPresupuestado > 0 ? ((costoReal - subtotalPresupuestado) / subtotalPresupuestado) * 100 : 0;
+  const margenPct = subtotalCliente > 0 ? ((subtotalCliente - subtotalPresupuestado) / subtotalCliente) * 100 : 0;
 
   async function guardar() {
     await onUpdate(draft);
@@ -316,7 +309,7 @@ function Capitulo({ cap, idx, vista, usdRate, onUpdateItem, onDeleteItem, onDele
               </tr>
             </thead>
             <tbody>
-              {cap.items.map((item) => (
+              {(cap.items || []).map((item) => (
                 <ItemRow
                   key={item.id}
                   item={item}
@@ -348,7 +341,10 @@ export default function PresupuestosTab({ proyecto }) {
   const [nuevoCapitulo, setNuevoCapitulo] = useState("");
 
   async function cargar() {
-    if (!proyectoId) return;
+    if (!proyectoId) {
+      setLoading(false);
+      return;
+    }
 
     setLoading(true);
 
@@ -356,10 +352,9 @@ export default function PresupuestosTab({ proyecto }) {
 
     if (!data) {
       data = await crearPresupuestoBase(proyectoId);
-      data.presupuesto_capitulos = [];
     }
 
-    setPresupuesto(mapDBPresupuesto(data));
+    setPresupuesto(mapDBPresupuesto(data || { capitulos: [] }));
     setLoading(false);
   }
 
@@ -367,7 +362,7 @@ export default function PresupuestosTab({ proyecto }) {
     cargar();
   }, [proyectoId]);
 
-  const usdRate = presupuesto?.usd_rate || USD_RATE_DEFAULT;
+  const usdRate = presupuesto?.usdRate || presupuesto?.usd_rate || USD_RATE_DEFAULT;
   const capitulos = presupuesto?.capitulos || [];
 
   const totales = useMemo(() => {
@@ -389,7 +384,7 @@ export default function PresupuestosTab({ proyecto }) {
   const desvioPct = totales.costoPresupuestado > 0 ? (totales.desvio / totales.costoPresupuestado) * 100 : 0;
 
   async function handleAddCapitulo() {
-    if (!nuevoCapitulo.trim()) return;
+    if (!nuevoCapitulo.trim() || !presupuesto?.id) return;
     await guardarCapitulo(presupuesto.id, nuevoCapitulo.trim(), capitulos.length);
     setNuevoCapitulo("");
     await cargar();
@@ -423,9 +418,7 @@ export default function PresupuestosTab({ proyecto }) {
     await cargar();
   }
 
-  if (loading) {
-    return <div style={s.page}>Cargando presupuesto...</div>;
-  }
+  if (loading) return <div style={s.page}>Cargando presupuesto...</div>;
 
   return (
     <div style={s.page}>
@@ -433,7 +426,7 @@ export default function PresupuestosTab({ proyecto }) {
         <div>
           <div style={s.title}>Presupuesto</div>
           <div style={s.subtitle}>
-            {proyecto?.name || proyecto?.nombre || "Obra"}· Versión {presupuesto?.numero_version || 1} · {presupuesto?.estado_version || "borrador"}
+            {proyecto?.name || proyecto?.nombre || "Obra"} · Versión {presupuesto?.numeroVersion || presupuesto?.numero_version || 1} · {presupuesto?.estadoVersion || presupuesto?.estado_version || "borrador"}
           </div>
         </div>
 
