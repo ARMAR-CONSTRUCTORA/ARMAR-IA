@@ -1,5 +1,3 @@
-import { useState } from 'react'
-
 const NAV_GROUPS = [
  {
    label: 'Principal',
@@ -12,6 +10,7 @@ const NAV_GROUPS = [
    label: 'Gestión',
    items: [
      { id: 'cronogramas', label: 'Cronogramas', icon: '📅' },
+     { id: 'presupuestos', label: 'Presupuestos', icon: '💰' },
      { id: 'equipo',      label: 'Equipo',       icon: '👥' },
    ],
  },
@@ -22,7 +21,6 @@ const NAV_GROUPS = [
    ],
  },
 ]
-
 function NavItems({ activePage, onNavigate, expanded }) {
  return (
    <nav style={{ padding: expanded ? '16px 12px' : '16px 6px', flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
