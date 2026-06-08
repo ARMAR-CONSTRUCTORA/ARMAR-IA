@@ -112,52 +112,80 @@ function fromDbPresupuestoCapitulo(row) {
 
 function fromDbPresupuestoItem(row) {
   return {
-    id:                 row.id,
-    capituloId:         row.capitulo_id,
-    descripcion:        row.descripcion || '',
-    unidad:             row.unidad || '',
-    cantidad:           Number(row.cantidad || 0),
-    precioCliente:      Number(row.precio_cliente || 0),
+    id: row.id,
+    capituloId: row.capitulo_id,
+    descripcion: row.descripcion || '',
+    unidad: row.unidad || 'GLOBAL',
+    cantidad: Number(row.cantidad || 0),
+
+    costoDirectoUnitario: Number(row.costo_directo_unitario || row.costo_presupuestado || 0),
+    indirectosPct: Number(row.indirectos_pct || 0),
+    riesgoPct: Number(row.riesgo_pct || 0),
+    utilidadPct: Number(row.utilidad_pct || 0),
+
+    precioCliente: Number(row.precio_cliente || 0),
     costoPresupuestado: Number(row.costo_presupuestado || 0),
-    costoContratado:    Number(row.costo_contratado || 0),
-    costoComprado:      Number(row.costo_comprado || 0),
-    costoFacturado:     Number(row.costo_facturado || 0),
-    costoPagado:        Number(row.costo_pagado || 0),
-    moneda:             row.moneda || 'ARS',
-    estadoItem:         row.estado_item || 'previsto',
-    etapaId:            row.etapa_id || null,
-    tareaId:            row.tarea_id || null,
-    hitoId:             row.hito_id || null,
-    proveedorId:        row.proveedor_id || null,
-    ordenCompraId:      row.orden_compra_id || null,
-    facturaId:          row.factura_id || null,
-    certificadoId:      row.certificado_id || null,
-    orden:              row.orden ?? 0,
+
+    costoContratado: Number(row.costo_contratado || 0),
+    costoComprado: Number(row.costo_comprado || 0),
+    costoFacturado: Number(row.costo_facturado || 0),
+    costoPagado: Number(row.costo_pagado || 0),
+
+    moneda: row.moneda || 'ARS',
+    estadoItem: row.estado_item || 'previsto',
+
+    etapaId: row.etapa_id || null,
+    tareaId: row.tarea_id || null,
+    hitoId: row.hito_id || null,
+    proveedorId: row.proveedor_id || null,
+    ordenCompraId: row.orden_compra_id || null,
+    facturaId: row.factura_id || null,
+    certificadoId: row.certificado_id || null,
+    orden: row.orden ?? 0,
   }
 }
 
 function toDbPresupuestoItem(item) {
+  const costoDirectoUnitario = Number(item.costoDirectoUnitario ?? item.costoPresupuestado ?? 0)
+  const indirectosPct = Number(item.indirectosPct ?? 0)
+  const riesgoPct = Number(item.riesgoPct ?? 0)
+  const utilidadPct = Number(item.utilidadPct ?? 0)
+
+  const precioCliente =
+    costoDirectoUnitario *
+    (1 + indirectosPct / 100) *
+    (1 + riesgoPct / 100) *
+    (1 + utilidadPct / 100)
+
   return {
-    capitulo_id:          item.capituloId,
-    descripcion:          item.descripcion || '',
-    unidad:               item.unidad || null,
-    cantidad:             item.cantidad ?? 0,
-    precio_cliente:       item.precioCliente ?? 0,
-    costo_presupuestado:  item.costoPresupuestado ?? 0,
-    costo_contratado:     item.costoContratado ?? 0,
-    costo_comprado:       item.costoComprado ?? 0,
-    costo_facturado:      item.costoFacturado ?? 0,
-    costo_pagado:         item.costoPagado ?? 0,
-    moneda:               item.moneda || 'ARS',
-    estado_item:          item.estadoItem || 'previsto',
-    etapa_id:             item.etapaId || null,
-    tarea_id:             item.tareaId || null,
-    hito_id:              item.hitoId || null,
-    proveedor_id:         item.proveedorId || null,
-    orden_compra_id:      item.ordenCompraId || null,
-    factura_id:           item.facturaId || null,
-    certificado_id:       item.certificadoId || null,
-    orden:                item.orden ?? 0,
+    capitulo_id: item.capituloId,
+    descripcion: item.descripcion || '',
+    unidad: item.unidad || 'GLOBAL',
+    cantidad: item.cantidad ?? 0,
+
+    costo_directo_unitario: costoDirectoUnitario,
+    costo_presupuestado: costoDirectoUnitario,
+    indirectos_pct: indirectosPct,
+    riesgo_pct: riesgoPct,
+    utilidad_pct: utilidadPct,
+    precio_cliente: precioCliente,
+
+    costo_contratado: item.costoContratado ?? 0,
+    costo_comprado: item.costoComprado ?? 0,
+    costo_facturado: item.costoFacturado ?? 0,
+    costo_pagado: item.costoPagado ?? 0,
+
+    moneda: item.moneda || 'ARS',
+    estado_item: item.estadoItem || 'previsto',
+
+    etapa_id: item.etapaId || null,
+    tarea_id: item.tareaId || null,
+    hito_id: item.hitoId || null,
+    proveedor_id: item.proveedorId || null,
+    orden_compra_id: item.ordenCompraId || null,
+    factura_id: item.facturaId || null,
+    certificado_id: item.certificadoId || null,
+    orden: item.orden ?? 0,
   }
 }
 
