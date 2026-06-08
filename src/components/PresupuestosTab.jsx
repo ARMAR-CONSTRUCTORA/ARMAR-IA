@@ -10,81 +10,61 @@ import {
   eliminarCapitulo,
 } from "../lib/supabase";
 
-const USD_RATE_DEFAULT = 1250;
-
-const ESTADOS_ITEM = [
-  "previsto",
-  "cotizado",
-  "aprobado",
-  "contratado",
-  "comprado",
-  "ejecutado",
-  "certificado",
-  "pagado",
-];
+const UNIDADES = ["GLOBAL", "UNIDAD", "M2", "M3"];
+const ESTADOS_ITEM = ["previsto", "cotizado", "contratado", "ejecutado", "pagado"];
 
 const orange = "#E8641A";
 const orangeLight = "#FFF3EB";
 const green = "#2D7A4F";
-const greenLight = "#EBF7F1";
 const red = "#C0392B";
-const blue = "#2563EB";
-const blueLight = "#EFF6FF";
 const dark = "#1A1A1A";
 const mid = "#444";
 const light = "#F7F7F5";
 const border = "#E0DDD8";
 
-function toARS(monto, moneda, usdRate) {
-  return moneda === "USD" ? Number(monto || 0) * usdRate : Number(monto || 0);
-}
-
-function formatMoney(n, moneda = "ARS") {
+function formatMoney(n) {
   const value = Number(n || 0);
-  if (moneda === "USD") return `U$D ${value.toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
   return `$ ${Math.round(value).toLocaleString("es-AR")}`;
 }
 
-function getCostoRealARS(item, usdRate) {
-  const real =
-    item.costoPagado ||
-    item.costoFacturado ||
-    item.costoComprado ||
-    item.costoContratado ||
-    0;
+function calcPrecioClienteUnitario(item) {
+  const costo = Number(item.costoDirectoUnitario || 0);
+  const indirectos = Number(item.indirectosPct || 0);
+  const riesgo = Number(item.riesgoPct || 0);
+  const utilidad = Number(item.utilidadPct || 0);
 
-  return toARS(real * item.cantidad, item.moneda, usdRate);
+  return costo * (1 + indirectos / 100) * (1 + riesgo / 100) * (1 + utilidad / 100);
 }
 
-function calcTotalesCapitulo(cap, usdRate) {
-  let cliente = 0;
-  let costoPresupuestado = 0;
-  let costoReal = 0;
+function calcItem(item) {
+  const cantidad = Number(item.cantidad || 0);
+  const costoDirectoUnitario = Number(item.costoDirectoUnitario || 0);
+  const subtotalCostoDirecto = cantidad * costoDirectoUnitario;
+  const precioClienteUnitario = calcPrecioClienteUnitario(item);
+  const subtotalCliente = cantidad * precioClienteUnitario;
+  const margen = subtotalCliente - subtotalCostoDirecto;
+  const margenPct = subtotalCliente > 0 ? (margen / subtotalCliente) * 100 : 0;
 
-  (cap.items || []).forEach((item) => {
-    cliente += toARS(item.precioCliente * item.cantidad, item.moneda, usdRate);
-    costoPresupuestado += toARS(item.costoPresupuestado * item.cantidad, item.moneda, usdRate);
-    costoReal += getCostoRealARS(item, usdRate);
-  });
-
-  const margen = cliente - costoPresupuestado;
-  const margenPct = cliente > 0 ? (margen / cliente) * 100 : 0;
-  const desvio = costoReal - costoPresupuestado;
-  const desvioPct = costoPresupuestado > 0 ? (desvio / costoPresupuestado) * 100 : 0;
-
-  return { cliente, costoPresupuestado, costoReal, margen, margenPct, desvio, desvioPct };
+  return {
+    subtotalCostoDirecto,
+    precioClienteUnitario,
+    subtotalCliente,
+    margen,
+    margenPct,
+  };
 }
 
-function colorDesvio(pct) {
-  if (pct <= 0) return green;
-  if (pct <= 10) return orange;
-  return red;
-}
-
-function bgDesvio(pct) {
-  if (pct <= 0) return greenLight;
-  if (pct <= 10) return orangeLight;
-  return "#FDECEA";
+function calcTotalesCapitulo(cap) {
+  return (cap.items || []).reduce(
+    (acc, item) => {
+      const t = calcItem(item);
+      acc.costoDirecto += t.subtotalCostoDirecto;
+      acc.cliente += t.subtotalCliente;
+      acc.margen += t.margen;
+      return acc;
+    },
+    { costoDirecto: 0, cliente: 0, margen: 0 }
+  );
 }
 
 const s = {
@@ -124,30 +104,21 @@ const s = {
     fontWeight: 500,
     cursor: "pointer",
   },
-  vistaBadge: (active) => ({
-    padding: "5px 12px",
-    borderRadius: 8,
-    fontSize: 12,
-    fontWeight: 600,
-    cursor: "pointer",
-    border: active ? "none" : `1px solid ${border}`,
-    background: active ? orange : "#fff",
-    color: active ? "#fff" : "#888",
-  }),
   capitulo: { background: "#fff", borderRadius: 12, marginBottom: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.05)", overflow: "hidden" },
   capHeader: { display: "flex", alignItems: "center", gap: 10, padding: "12px 16px", cursor: "pointer" },
   capNum: { width: 28, height: 28, borderRadius: 7, background: orangeLight, color: orange, fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" },
   capNombre: { flex: 1, fontSize: 14, fontWeight: 600 },
-  badge: (color, bg) => ({ fontSize: 12, fontWeight: 700, color, background: bg, padding: "2px 8px", borderRadius: 20 }),
-  table: { width: "100%", borderCollapse: "collapse" },
-  th: { padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", background: "#FAFAF9", textAlign: "left", borderBottom: `1px solid ${border}` },
-  thR: { padding: "8px 12px", fontSize: 11, fontWeight: 700, color: "#999", textTransform: "uppercase", background: "#FAFAF9", textAlign: "right", borderBottom: `1px solid ${border}` },
-  td: { padding: "9px 12px", fontSize: 13, color: mid, borderBottom: `1px solid ${border}` },
-  tdR: { padding: "9px 12px", fontSize: 13, color: mid, borderBottom: `1px solid ${border}`, textAlign: "right" },
-  tdMono: { padding: "9px 12px", fontSize: 13, fontFamily: "'Courier New', monospace", borderBottom: `1px solid ${border}`, textAlign: "right" },
-  input: { border: `1px solid ${border}`, borderRadius: 6, padding: "5px 8px", fontSize: 13, width: "100%", outline: "none" },
+  tableWrap: { overflowX: "auto" },
+  table: { width: "100%", minWidth: 1180, borderCollapse: "collapse" },
+  th: { padding: "8px 10px", fontSize: 10, fontWeight: 700, color: "#999", textTransform: "uppercase", background: "#FAFAF9", textAlign: "left", borderBottom: `1px solid ${border}` },
+  thR: { padding: "8px 10px", fontSize: 10, fontWeight: 700, color: "#999", textTransform: "uppercase", background: "#FAFAF9", textAlign: "right", borderBottom: `1px solid ${border}` },
+  td: { padding: "8px 10px", fontSize: 12, color: mid, borderBottom: `1px solid ${border}` },
+  tdR: { padding: "8px 10px", fontSize: 12, color: mid, borderBottom: `1px solid ${border}`, textAlign: "right" },
+  input: { border: `1px solid ${border}`, borderRadius: 6, padding: "5px 7px", fontSize: 12, width: "100%", outline: "none", background: "#fff" },
+  select: { border: `1px solid ${border}`, borderRadius: 6, padding: "5px 7px", fontSize: 12, width: "100%", outline: "none", background: "#fff" },
   btnIcon: { background: "none", border: "none", cursor: "pointer", padding: "3px 6px", fontSize: 14 },
   btnAdd: { background: "none", border: `1px dashed ${border}`, color: "#aaa", borderRadius: 7, padding: "8px 14px", fontSize: 12, cursor: "pointer", width: "100%" },
+  badge: (color, bg) => ({ fontSize: 11, fontWeight: 700, color, background: bg, padding: "2px 8px", borderRadius: 20 }),
 };
 
 function mapDBPresupuesto(data) {
@@ -156,7 +127,7 @@ function mapDBPresupuesto(data) {
     id: data.id,
     numeroVersion: data.numeroVersion || data.numero_version || 1,
     estadoVersion: data.estadoVersion || data.estado_version || "borrador",
-    usdRate: data.usdRate || data.usd_rate || USD_RATE_DEFAULT,
+    usdRate: data.usdRate || data.usd_rate || 1250,
     capitulos: (data.capitulos || data.presupuesto_capitulos || [])
       .sort((a, b) => (a.orden || 0) - (b.orden || 0))
       .map((cap) => ({
@@ -168,16 +139,25 @@ function mapDBPresupuesto(data) {
           .map((it) => ({
             id: it.id,
             descripcion: it.descripcion || "",
-            unidad: it.unidad || "",
+            unidad: it.unidad || "GLOBAL",
             cantidad: Number(it.cantidad || 0),
+
+            costoDirectoUnitario: Number(it.costoDirectoUnitario || it.costo_directo_unitario || it.costoPresupuestado || it.costo_presupuestado || 0),
+            indirectosPct: Number(it.indirectosPct || it.indirectos_pct || 0),
+            riesgoPct: Number(it.riesgoPct || it.riesgo_pct || 0),
+            utilidadPct: Number(it.utilidadPct || it.utilidad_pct || 0),
+
             precioCliente: Number(it.precioCliente || it.precio_cliente || 0),
             costoPresupuestado: Number(it.costoPresupuestado || it.costo_presupuestado || 0),
+
+            moneda: it.moneda || "ARS",
+            estadoItem: it.estadoItem || it.estado_item || "previsto",
+
             costoContratado: Number(it.costoContratado || it.costo_contratado || 0),
             costoComprado: Number(it.costoComprado || it.costo_comprado || 0),
             costoFacturado: Number(it.costoFacturado || it.costo_facturado || 0),
             costoPagado: Number(it.costoPagado || it.costo_pagado || 0),
-            moneda: it.moneda || "ARS",
-            estadoItem: it.estadoItem || it.estado_item || "previsto",
+
             etapaId: it.etapaId || it.etapa_id || null,
             tareaId: it.tareaId || it.tarea_id || null,
             hitoId: it.hitoId || it.hito_id || null,
@@ -186,46 +166,79 @@ function mapDBPresupuesto(data) {
   };
 }
 
-function ItemRow({ item, vista, usdRate, onUpdate, onDelete }) {
+function ItemRow({ item, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item);
 
-  const subtotalCliente = toARS(item.precioCliente * item.cantidad, item.moneda, usdRate);
-  const subtotalPresupuestado = toARS(item.costoPresupuestado * item.cantidad, item.moneda, usdRate);
-  const costoReal = getCostoRealARS(item, usdRate);
-  const desvioPct = subtotalPresupuestado > 0 ? ((costoReal - subtotalPresupuestado) / subtotalPresupuestado) * 100 : 0;
-  const margenPct = subtotalCliente > 0 ? ((subtotalCliente - subtotalPresupuestado) / subtotalCliente) * 100 : 0;
+  const itemCalc = calcItem(item);
+  const draftCalc = calcItem(draft);
+
+  function updateDraft(field, value) {
+    setDraft((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  }
 
   async function guardar() {
-    await onUpdate(draft);
+    const precioClienteUnitario = calcPrecioClienteUnitario(draft);
+
+    await onUpdate({
+      ...draft,
+      precioCliente: precioClienteUnitario,
+      costoPresupuestado: Number(draft.costoDirectoUnitario || 0),
+    });
+
     setEditing(false);
   }
 
   if (editing) {
     return (
       <tr style={{ background: orangeLight }}>
-        <td style={s.td} colSpan={10}>
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 70px 70px 110px 110px 110px 110px 110px 110px", gap: 8 }}>
-            <input style={s.input} value={draft.descripcion} onChange={(e) => setDraft({ ...draft, descripcion: e.target.value })} />
-            <input style={s.input} value={draft.unidad} onChange={(e) => setDraft({ ...draft, unidad: e.target.value })} />
-            <input style={s.input} type="number" value={draft.cantidad} onChange={(e) => setDraft({ ...draft, cantidad: Number(e.target.value) })} />
-            <input style={s.input} type="number" value={draft.precioCliente} onChange={(e) => setDraft({ ...draft, precioCliente: Number(e.target.value) })} />
-            <input style={s.input} type="number" value={draft.costoPresupuestado} onChange={(e) => setDraft({ ...draft, costoPresupuestado: Number(e.target.value) })} />
-            <input style={s.input} type="number" value={draft.costoContratado} onChange={(e) => setDraft({ ...draft, costoContratado: Number(e.target.value) })} />
-            <input style={s.input} type="number" value={draft.costoFacturado} onChange={(e) => setDraft({ ...draft, costoFacturado: Number(e.target.value) })} />
-            <select style={s.input} value={draft.estadoItem} onChange={(e) => setDraft({ ...draft, estadoItem: e.target.value })}>
-              {ESTADOS_ITEM.map((estado) => <option key={estado} value={estado}>{estado}</option>)}
-            </select>
-            <select style={s.input} value={draft.moneda} onChange={(e) => setDraft({ ...draft, moneda: e.target.value })}>
-              <option value="ARS">ARS</option>
-              <option value="USD">USD</option>
-            </select>
-          </div>
+        <td style={s.td}>
+          <input style={s.input} value={draft.descripcion} onChange={(e) => updateDraft("descripcion", e.target.value)} />
+        </td>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-            <button style={s.btnSecondary} onClick={() => setEditing(false)}>Cancelar</button>
-            <button style={s.btnPrimary} onClick={guardar}>Guardar</button>
-          </div>
+        <td style={s.td}>
+          <select style={s.select} value={draft.unidad} onChange={(e) => updateDraft("unidad", e.target.value)}>
+            {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+          </select>
+        </td>
+
+        <td style={s.tdR}>
+          <input style={{ ...s.input, textAlign: "right" }} type="number" value={draft.cantidad} onChange={(e) => updateDraft("cantidad", Number(e.target.value))} />
+        </td>
+
+        <td style={s.tdR}>
+          <input style={{ ...s.input, textAlign: "right" }} type="number" value={draft.costoDirectoUnitario} onChange={(e) => updateDraft("costoDirectoUnitario", Number(e.target.value))} />
+        </td>
+
+        <td style={s.tdR}>{formatMoney(draftCalc.subtotalCostoDirecto)}</td>
+
+        <td style={s.tdR}>
+          <input style={{ ...s.input, textAlign: "right" }} type="number" value={draft.indirectosPct} onChange={(e) => updateDraft("indirectosPct", Number(e.target.value))} />
+        </td>
+
+        <td style={s.tdR}>
+          <input style={{ ...s.input, textAlign: "right" }} type="number" value={draft.riesgoPct} onChange={(e) => updateDraft("riesgoPct", Number(e.target.value))} />
+        </td>
+
+        <td style={s.tdR}>
+          <input style={{ ...s.input, textAlign: "right" }} type="number" value={draft.utilidadPct} onChange={(e) => updateDraft("utilidadPct", Number(e.target.value))} />
+        </td>
+
+        <td style={{ ...s.tdR, fontWeight: 700, color: orange }}>{formatMoney(draftCalc.precioClienteUnitario)}</td>
+        <td style={{ ...s.tdR, fontWeight: 700, color: orange }}>{formatMoney(draftCalc.subtotalCliente)}</td>
+
+        <td style={s.td}>
+          <select style={s.select} value={draft.estadoItem} onChange={(e) => updateDraft("estadoItem", e.target.value)}>
+            {ESTADOS_ITEM.map((estado) => <option key={estado} value={estado}>{estado}</option>)}
+          </select>
+        </td>
+
+        <td style={{ ...s.td, textAlign: "right", whiteSpace: "nowrap" }}>
+          <button style={s.btnIcon} onClick={guardar}>💾</button>
+          <button style={s.btnIcon} onClick={() => setEditing(false)}>✕</button>
         </td>
       </tr>
     );
@@ -235,25 +248,18 @@ function ItemRow({ item, vista, usdRate, onUpdate, onDelete }) {
     <tr>
       <td style={s.td}>{item.descripcion}</td>
       <td style={s.td}>{item.unidad}</td>
-      <td style={s.tdR}>{item.cantidad}</td>
-
-      {vista !== "interno" && <td style={s.tdMono}>{formatMoney(item.precioCliente, item.moneda)}</td>}
-      {vista !== "cliente" && <td style={s.tdMono}>{formatMoney(item.costoPresupuestado, item.moneda)}</td>}
-      {vista === "real" && <td style={s.tdMono}>{formatMoney(costoReal)}</td>}
-
-      {vista === "comparar" && (
-        <>
-          <td style={s.tdMono}>{formatMoney(subtotalCliente)}</td>
-          <td style={{ ...s.tdMono, color: margenPct >= 20 ? green : margenPct >= 10 ? orange : red }}>{margenPct.toFixed(1)}%</td>
-          <td style={{ ...s.tdMono, color: colorDesvio(desvioPct) }}>{desvioPct.toFixed(1)}%</td>
-        </>
-      )}
-
+      <td style={s.tdR}>{Number(item.cantidad || 0).toLocaleString("es-AR")}</td>
+      <td style={s.tdR}>{formatMoney(item.costoDirectoUnitario)}</td>
+      <td style={s.tdR}>{formatMoney(itemCalc.subtotalCostoDirecto)}</td>
+      <td style={s.tdR}>{Number(item.indirectosPct || 0)}%</td>
+      <td style={s.tdR}>{Number(item.riesgoPct || 0)}%</td>
+      <td style={s.tdR}>{Number(item.utilidadPct || 0)}%</td>
+      <td style={{ ...s.tdR, color: orange, fontWeight: 700 }}>{formatMoney(itemCalc.precioClienteUnitario)}</td>
+      <td style={{ ...s.tdR, color: orange, fontWeight: 700 }}>{formatMoney(itemCalc.subtotalCliente)}</td>
       <td style={s.td}>
-        <span style={s.badge(blue, blueLight)}>{item.estadoItem}</span>
+        <span style={s.badge(green, "#EBF7F1")}>{item.estadoItem}</span>
       </td>
-
-      <td style={{ ...s.td, textAlign: "right" }}>
+      <td style={{ ...s.td, textAlign: "right", whiteSpace: "nowrap" }}>
         <button style={s.btnIcon} onClick={() => setEditing(true)}>✏️</button>
         <button style={s.btnIcon} onClick={() => onDelete(item.id)}>🗑️</button>
       </td>
@@ -261,19 +267,20 @@ function ItemRow({ item, vista, usdRate, onUpdate, onDelete }) {
   );
 }
 
-function Capitulo({ cap, idx, vista, usdRate, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAddItem }) {
+function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAddItem }) {
   const [open, setOpen] = useState(true);
-  const t = calcTotalesCapitulo(cap, usdRate);
+  const t = calcTotalesCapitulo(cap);
+  const margenPct = t.cliente > 0 ? (t.margen / t.cliente) * 100 : 0;
 
   return (
     <div style={s.capitulo}>
       <div style={s.capHeader} onClick={() => setOpen(!open)}>
         <div style={s.capNum}>{idx + 1}</div>
         <div style={s.capNombre}>{cap.nombre}</div>
+        <strong style={{ color: green }}>{formatMoney(t.costoDirecto)}</strong>
         <strong style={{ color: orange }}>{formatMoney(t.cliente)}</strong>
-        <strong style={{ color: green }}>{formatMoney(t.costoPresupuestado)}</strong>
-        <span style={s.badge(colorDesvio(t.desvioPct), bgDesvio(t.desvioPct))}>
-          Desvío {t.desvioPct.toFixed(1)}%
+        <span style={s.badge(margenPct >= 20 ? green : margenPct >= 10 ? orange : red, margenPct >= 20 ? "#EBF7F1" : margenPct >= 10 ? "#FFF3EB" : "#FDECEA")}>
+          Margen {margenPct.toFixed(1)}%
         </span>
         <button
           style={s.btnIcon}
@@ -288,39 +295,37 @@ function Capitulo({ cap, idx, vista, usdRate, onUpdateItem, onDeleteItem, onDele
 
       {open && (
         <>
-          <table style={s.table}>
-            <thead>
-              <tr>
-                <th style={s.th}>Descripción</th>
-                <th style={s.th}>Unidad</th>
-                <th style={s.thR}>Cant.</th>
-                {vista !== "interno" && <th style={s.thR}>P. Cliente</th>}
-                {vista !== "cliente" && <th style={s.thR}>Costo Presup.</th>}
-                {vista === "real" && <th style={s.thR}>Costo Real</th>}
-                {vista === "comparar" && (
-                  <>
-                    <th style={s.thR}>Subtotal Cliente</th>
-                    <th style={s.thR}>Margen</th>
-                    <th style={s.thR}>Desvío</th>
-                  </>
-                )}
-                <th style={s.th}>Estado</th>
-                <th style={s.thR}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {(cap.items || []).map((item) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  vista={vista}
-                  usdRate={usdRate}
-                  onUpdate={onUpdateItem}
-                  onDelete={onDeleteItem}
-                />
-              ))}
-            </tbody>
-          </table>
+          <div style={s.tableWrap}>
+            <table style={s.table}>
+              <thead>
+                <tr>
+                  <th style={s.th}>Descripción</th>
+                  <th style={s.th}>Unidad</th>
+                  <th style={s.thR}>Cantidad</th>
+                  <th style={s.thR}>Costo directo unit.</th>
+                  <th style={s.thR}>Subtotal costo directo</th>
+                  <th style={s.thR}>Indirectos %</th>
+                  <th style={s.thR}>Riesgo %</th>
+                  <th style={s.thR}>Utilidad %</th>
+                  <th style={s.thR}>Precio cliente unit.</th>
+                  <th style={s.thR}>Subtotal cliente</th>
+                  <th style={s.th}>Estado</th>
+                  <th style={s.thR}></th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {(cap.items || []).map((item) => (
+                  <ItemRow
+                    key={item.id}
+                    item={item}
+                    onUpdate={onUpdateItem}
+                    onDelete={onDeleteItem}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <div style={{ padding: "8px 16px 12px" }}>
             <button style={s.btnAdd} onClick={() => onAddItem(cap.id)}>
@@ -337,7 +342,6 @@ export default function PresupuestosTab({ proyecto }) {
   const proyectoId = proyecto?.id;
   const [loading, setLoading] = useState(true);
   const [presupuesto, setPresupuesto] = useState(null);
-  const [vista, setVista] = useState("comparar");
   const [nuevoCapitulo, setNuevoCapitulo] = useState("");
 
   async function cargar() {
@@ -362,26 +366,22 @@ export default function PresupuestosTab({ proyecto }) {
     cargar();
   }, [proyectoId]);
 
-  const usdRate = presupuesto?.usdRate || presupuesto?.usd_rate || USD_RATE_DEFAULT;
   const capitulos = presupuesto?.capitulos || [];
 
   const totales = useMemo(() => {
     return capitulos.reduce(
       (acc, cap) => {
-        const t = calcTotalesCapitulo(cap, usdRate);
+        const t = calcTotalesCapitulo(cap);
+        acc.costoDirecto += t.costoDirecto;
         acc.cliente += t.cliente;
-        acc.costoPresupuestado += t.costoPresupuestado;
-        acc.costoReal += t.costoReal;
-        acc.desvio += t.desvio;
+        acc.margen += t.margen;
         return acc;
       },
-      { cliente: 0, costoPresupuestado: 0, costoReal: 0, desvio: 0 }
+      { costoDirecto: 0, cliente: 0, margen: 0 }
     );
-  }, [capitulos, usdRate]);
+  }, [capitulos]);
 
-  const margen = totales.cliente - totales.costoPresupuestado;
-  const margenPct = totales.cliente > 0 ? (margen / totales.cliente) * 100 : 0;
-  const desvioPct = totales.costoPresupuestado > 0 ? (totales.desvio / totales.costoPresupuestado) * 100 : 0;
+  const margenPct = totales.cliente > 0 ? (totales.margen / totales.cliente) * 100 : 0;
 
   async function handleAddCapitulo() {
     if (!nuevoCapitulo.trim() || !presupuesto?.id) return;
@@ -393,8 +393,12 @@ export default function PresupuestosTab({ proyecto }) {
   async function handleAddItem(capituloId) {
     await guardarItem(capituloId, {
       descripcion: "Nuevo ítem",
-      unidad: "m2",
+      unidad: "GLOBAL",
       cantidad: 1,
+      costoDirectoUnitario: 0,
+      indirectosPct: 0,
+      riesgoPct: 0,
+      utilidadPct: 0,
       precioCliente: 0,
       costoPresupuestado: 0,
       moneda: "ARS",
@@ -429,33 +433,20 @@ export default function PresupuestosTab({ proyecto }) {
             {proyecto?.name || proyecto?.nombre || "Obra"} · Versión {presupuesto?.numeroVersion || presupuesto?.numero_version || 1} · {presupuesto?.estadoVersion || presupuesto?.estado_version || "borrador"}
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
-          {[
-            ["cliente", "Cliente"],
-            ["interno", "Interno"],
-            ["comparar", "Comparar"],
-            ["real", "Real"],
-          ].map(([key, label]) => (
-            <button key={key} style={s.vistaBadge(vista === key)} onClick={() => setVista(key)}>
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div style={{ padding: "16px 24px 0" }}>
         <div style={s.cards}>
-          <div style={s.card(orange)}>
-            <div style={s.cardLabel}>Total cliente</div>
-            <div style={s.cardValue(orange)}>{formatMoney(totales.cliente)}</div>
-            <div style={s.cardSub}>Precio de venta presupuestado</div>
+          <div style={s.card(green)}>
+            <div style={s.cardLabel}>Costo directo</div>
+            <div style={s.cardValue(green)}>{formatMoney(totales.costoDirecto)}</div>
+            <div style={s.cardSub}>costo puro presupuestado</div>
           </div>
 
-          <div style={s.card(green)}>
-            <div style={s.cardLabel}>Costo presupuestado interno</div>
-            <div style={s.cardValue(green)}>{formatMoney(totales.costoPresupuestado)}</div>
-            <div style={s.cardSub}>Base económica aprobada</div>
+          <div style={s.card(orange)}>
+            <div style={s.cardLabel}>Subtotal cliente</div>
+            <div style={s.cardValue(orange)}>{formatMoney(totales.cliente)}</div>
+            <div style={s.cardSub}>precio de venta calculado</div>
           </div>
 
           <div style={s.card(margenPct >= 20 ? green : margenPct >= 10 ? orange : red)}>
@@ -463,15 +454,13 @@ export default function PresupuestosTab({ proyecto }) {
             <div style={s.cardValue(margenPct >= 20 ? green : margenPct >= 10 ? orange : red)}>
               {margenPct.toFixed(1)}%
             </div>
-            <div style={s.cardSub}>{formatMoney(margen)}</div>
+            <div style={s.cardSub}>{formatMoney(totales.margen)}</div>
           </div>
 
-          <div style={s.card(colorDesvio(desvioPct))}>
-            <div style={s.cardLabel}>Desvío real</div>
-            <div style={s.cardValue(colorDesvio(desvioPct))}>
-              {desvioPct.toFixed(1)}%
-            </div>
-            <div style={s.cardSub}>{formatMoney(totales.desvio)}</div>
+          <div style={s.card(dark)}>
+            <div style={s.cardLabel}>Cantidad de capítulos</div>
+            <div style={s.cardValue(dark)}>{capitulos.length}</div>
+            <div style={s.cardSub}>rubros presupuestados</div>
           </div>
         </div>
 
@@ -494,8 +483,6 @@ export default function PresupuestosTab({ proyecto }) {
             key={cap.id}
             cap={cap}
             idx={idx}
-            vista={vista}
-            usdRate={usdRate}
             onUpdateItem={handleUpdateItem}
             onDeleteItem={handleDeleteItem}
             onDeleteCapitulo={handleDeleteCapitulo}
