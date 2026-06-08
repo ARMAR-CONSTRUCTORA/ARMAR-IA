@@ -9,6 +9,8 @@ import ConfigPage from './components/ConfigPage'
 import CronogramasPage from './components/CronogramasPage'
 import EquipoPage from './components/EquipoPage'
 import LoginModal from './components/LoginModal'
+import PresupuestosTab from './components/PresupuestosTab'
+
 import {
   supabase,
   loadProjects, upsertProject, deleteProject,
@@ -22,6 +24,7 @@ const PAGE_TITLES = {
   dashboard:     'Dashboard',
   obras:         'Obras',
   cronogramas:   'Cronogramas',
+  presupuestos:  'Presupuestos',
   equipo:        'Equipo',
   documentos:    'Documentos',
   configuracion: 'Configuración',
@@ -42,8 +45,8 @@ function LoadingScreen() {
 function App() {
   const { isDesktop, isMobile } = useBreakpoint()
 
-  const [loading, setLoading]     = useState(true)
-  const [projects, setProjects]   = useState([])
+  const [loading, setLoading] = useState(true)
+  const [projects, setProjects] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [cronogramas, setCronogramas] = useState({})
 
@@ -53,17 +56,18 @@ function App() {
       return raw ? JSON.parse(raw) : null
     } catch { return null }
   })
-  const [loginModalOpen, setLoginModalOpen] = useState(false)
 
+  const [loginModalOpen, setLoginModalOpen] = useState(false)
   const isEditor = currentUser !== null
 
-  const [activePage, setActivePage]   = useState('dashboard')
-  const [menuOpen, setMenuOpen]       = useState(false)
-  const [modalOpen, setModalOpen]     = useState(false)
-  const [editingProject, setEditing]  = useState(null)
+  const [activePage, setActivePage] = useState('dashboard')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingProject, setEditing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
 
-  // ── Carga inicial ───────────────────────────────────────────────────────────
+  const [selectedBudgetProjectId, setSelectedBudgetProjectId] = useState(null)
+
   useEffect(() => {
     Promise.all([
       loadProjects(),
@@ -73,16 +77,19 @@ function App() {
       setProjects(projs)
       setTeamMembers(team)
       setCronogramas(cronos)
+      setSelectedBudgetProjectId(projs?.[0]?.id ?? null)
       setLoading(false)
     })
   }, [])
 
-  // ── Suscripciones Realtime ──────────────────────────────────────────────────
   useEffect(() => {
     const channel = supabase
       .channel('armar-ia-realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
-        loadProjects().then(setProjects)
+        loadProjects().then(projs => {
+          setProjects(projs)
+          setSelectedBudgetProjectId(prev => prev ?? projs?.[0]?.id ?? null)
+        })
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'cronogramas' }, () => {
         loadCronogramasAll().then(setCronogramas)
@@ -95,7 +102,6 @@ function App() {
     return () => supabase.removeChannel(channel)
   }, [])
 
-  // ── Keep-alive: evita que el proyecto gratuito de Supabase se pause ─────────
   useEffect(() => {
     const ping = () => supabase.from('projects').select('id').limit(1)
     ping()
@@ -103,7 +109,6 @@ function App() {
     return () => clearInterval(id)
   }, [])
 
-  // ── UI effects ──────────────────────────────────────────────────────────────
   useEffect(() => { if (isDesktop) setMenuOpen(false) }, [isDesktop])
 
   useEffect(() => {
@@ -111,7 +116,6 @@ function App() {
     return () => { document.body.style.overflow = '' }
   }, [menuOpen, modalOpen, isDesktop])
 
-  // ── Auth ────────────────────────────────────────────────────────────────────
   const handleLogin = (user) => {
     setCurrentUser(user)
     sessionStorage.setItem(SESSION_KEY, JSON.stringify(user))
@@ -123,13 +127,11 @@ function App() {
     sessionStorage.removeItem(SESSION_KEY)
   }
 
-  // ── Navegación y modal ──────────────────────────────────────────────────────
-  const openAdd    = () => { setEditing(null); setModalOpen(true) }
-  const openEdit   = (p) => { setEditing(p); setModalOpen(true) }
+  const openAdd = () => { setEditing(null); setModalOpen(true) }
+  const openEdit = (p) => { setEditing(p); setModalOpen(true) }
   const closeModal = () => { setModalOpen(false); setEditing(null) }
   const handleNavigate = (page) => { setActivePage(page); setMenuOpen(false) }
 
-  // ── Obras ───────────────────────────────────────────────────────────────────
   const handleSave = async (data) => {
     if (editingProject) {
       const updated = { ...data, id: editingProject.id }
@@ -139,6 +141,7 @@ function App() {
       const newId = Date.now()
       const project = { ...data, id: newId, tasks: data.tasks || [], progress: data.progress ?? 0 }
       setProjects(prev => [...prev, project])
+      setSelectedBudgetProjectId(prev => prev ?? newId)
       await upsertProject(project)
     }
     closeModal()
@@ -147,6 +150,10 @@ function App() {
   const handleDelete = async (id) => {
     setProjects(prev => prev.filter(p => p.id !== id))
     setDeleteTarget(null)
+    if (selectedBudgetProjectId === id) {
+      const nextProject = projects.find(p => p.id !== id)
+      setSelectedBudgetProjectId(nextProject?.id ?? null)
+    }
     await deleteProject(id)
   }
 
@@ -154,21 +161,24 @@ function App() {
     const avg = updatedTasks.length
       ? Math.round(updatedTasks.reduce((s, t) => s + t.progress, 0) / updatedTasks.length)
       : 0
+
     const project = projects.find(p => p.id === projectId)
     if (!project) return
+
     const updated = { ...project, tasks: updatedTasks, progress: avg }
     setProjects(prev => prev.map(p => p.id === projectId ? updated : p))
     await upsertProject(updated)
   }
 
-  // ── Cronogramas ─────────────────────────────────────────────────────────────
   const handleCreateCronograma = async (projectId, data) => {
     const id = `cron-${projectId}-${Date.now()}`
     const cronograma = { ...data, id }
+
     setCronogramas(prev => ({
       ...prev,
       [projectId]: [...(prev[projectId] || []), cronograma],
     }))
+
     await upsertCronograma(cronograma)
   }
 
@@ -177,38 +187,51 @@ function App() {
       ...prev,
       [projectId]: (prev[projectId] || []).filter(c => c.id !== cronId),
     }))
+
     await deleteCronograma(cronId)
   }
 
   const handleSaveCronograma = async (projectId, cronId, updates) => {
     const existing = cronogramas[projectId]?.find(c => c.id === cronId)
     if (!existing) return
+
     const updated = { ...existing, ...updates }
+
     setCronogramas(prev => ({
       ...prev,
       [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updated : c),
     }))
+
     await upsertCronograma(updated)
   }
 
   const handleCargarAvance = async (projectId, cronId, informe, tareasActualizadas) => {
     const existing = cronogramas[projectId]?.find(c => c.id === cronId)
     if (!existing) return
+
     const updatedCron = {
       ...existing,
       tareas: tareasActualizadas,
       informes: [...(existing.informes || []), informe],
     }
-    const totalPeso = tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + (t.pesoRelativo || 1), 0)
+
+    const totalPeso = tareasActualizadas
+      .filter(t => t.parentId === null)
+      .reduce((s, t) => s + (t.pesoRelativo || 1), 0)
+
     const nuevoAvance = Math.round(
-      tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
+      tareasActualizadas
+        .filter(t => t.parentId === null)
+        .reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
     )
+
     const updatedProject = projects.find(p => p.id === projectId)
 
     setCronogramas(prev => ({
       ...prev,
       [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updatedCron : c),
     }))
+
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
 
     await Promise.all([
@@ -220,21 +243,30 @@ function App() {
   const handleEditarInforme = async (projectId, cronId, informeId, updatedInforme, tareasActualizadas) => {
     const existing = cronogramas[projectId]?.find(c => c.id === cronId)
     if (!existing) return
+
     const updatedCron = {
       ...existing,
       tareas: tareasActualizadas,
       informes: (existing.informes || []).map(inf => inf.id === informeId ? updatedInforme : inf),
     }
-    const totalPeso = tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + (t.pesoRelativo || 1), 0)
+
+    const totalPeso = tareasActualizadas
+      .filter(t => t.parentId === null)
+      .reduce((s, t) => s + (t.pesoRelativo || 1), 0)
+
     const nuevoAvance = Math.round(
-      tareasActualizadas.filter(t => t.parentId === null).reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
+      tareasActualizadas
+        .filter(t => t.parentId === null)
+        .reduce((s, t) => s + t.avanceActual * (t.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
     )
+
     const updatedProject = projects.find(p => p.id === projectId)
 
     setCronogramas(prev => ({
       ...prev,
       [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updatedCron : c),
     }))
+
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
 
     await Promise.all([
@@ -243,7 +275,6 @@ function App() {
     ])
   }
 
-  // ── Equipo ──────────────────────────────────────────────────────────────────
   const handleAddMember = async (name, category) => {
     const member = { id: `m-${Date.now()}`, name, category }
     setTeamMembers(prev => [...prev, member])
@@ -253,6 +284,7 @@ function App() {
   const handleEditMember = async (id, name) => {
     const existing = teamMembers.find(m => m.id === id)
     if (!existing) return
+
     const updated = { ...existing, name }
     setTeamMembers(prev => prev.map(m => m.id === id ? updated : m))
     await upsertTeamMember(updated)
@@ -263,42 +295,94 @@ function App() {
     await deleteTeamMember(id)
   }
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) return <LoadingScreen />
+
+  const selectedBudgetProject =
+    projects.find(p => p.id === selectedBudgetProjectId) ||
+    projects[0] ||
+    null
 
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
         return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} isEditor={isEditor} />
+
       case 'obras':
-        return <ProjectList
-          projects={projects}
-          cronogramas={cronogramas}
-          teamMembers={teamMembers}
-          onAdd={openAdd}
-          onEdit={openEdit}
-          onDelete={setDeleteTarget}
-          onUpdateTasks={handleUpdateTasks}
-          onCreateCronograma={handleCreateCronograma}
-          onSaveCronograma={handleSaveCronograma}
-          onCargarAvance={handleCargarAvance}
-          onDeleteCronograma={handleDeleteCronograma}
-          onEditarInforme={handleEditarInforme}
-          isEditor={isEditor}
-        />
+        return (
+          <ProjectList
+            projects={projects}
+            cronogramas={cronogramas}
+            teamMembers={teamMembers}
+            onAdd={openAdd}
+            onEdit={openEdit}
+            onDelete={setDeleteTarget}
+            onUpdateTasks={handleUpdateTasks}
+            onCreateCronograma={handleCreateCronograma}
+            onSaveCronograma={handleSaveCronograma}
+            onCargarAvance={handleCargarAvance}
+            onDeleteCronograma={handleDeleteCronograma}
+            onEditarInforme={handleEditarInforme}
+            isEditor={isEditor}
+          />
+        )
+
       case 'cronogramas':
         return <CronogramasPage projects={projects} />
+
+      case 'presupuestos':
+        return (
+          <div>
+            <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--gray-600)' }}>
+                Obra:
+              </label>
+
+              <select
+                value={selectedBudgetProject?.id || ''}
+                onChange={e => setSelectedBudgetProjectId(Number(e.target.value))}
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 8,
+                  border: '1px solid var(--gray-200)',
+                  background: 'white',
+                  fontSize: 14,
+                  fontFamily: 'inherit',
+                  minWidth: 260,
+                }}
+              >
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedBudgetProject ? (
+              <PresupuestosTab proyecto={selectedBudgetProject} isEditor={isEditor} />
+            ) : (
+              <div style={{ background: 'white', padding: 24, borderRadius: 16 }}>
+                No hay obras cargadas para presupuestar.
+              </div>
+            )}
+          </div>
+        )
+
       case 'equipo':
-        return <EquipoPage
-          projects={projects}
-          teamMembers={teamMembers}
-          onAddMember={handleAddMember}
-          onEditMember={handleEditMember}
-          onDeleteMember={handleDeleteMember}
-          isEditor={isEditor}
-        />
+        return (
+          <EquipoPage
+            projects={projects}
+            teamMembers={teamMembers}
+            onAddMember={handleAddMember}
+            onEditMember={handleEditMember}
+            onDeleteMember={handleDeleteMember}
+            isEditor={isEditor}
+          />
+        )
+
       case 'configuracion':
         return <ConfigPage />
+
       default:
         return null
     }
@@ -318,13 +402,13 @@ function App() {
       />
 
       <div style={{
-        marginLeft: isDesktop ? 240 : 0,
+        marginLeft: 0,
         flex: 1,
         height: '100vh',
         overflow: 'hidden',
         display: 'flex',
         flexDirection: 'column',
-        maxWidth: isDesktop ? 'calc(100vw - 240px)' : '100vw',
+        maxWidth: '100vw',
         minWidth: 0,
       }}>
         {!isDesktop && (
@@ -337,7 +421,7 @@ function App() {
         <main style={{
           flex: 1,
           overflowY: 'auto',
-          padding: isMobile ? '20px 16px 40px' : isDesktop ? '40px 40px' : '28px 24px',
+          padding: isMobile ? '20px 16px 40px' : isDesktop ? '40px 40px 40px 104px' : '28px 24px',
         }}>
           {renderPage()}
         </main>
@@ -374,13 +458,17 @@ function App() {
             {isMobile && (
               <div style={{ width: 40, height: 4, background: 'var(--gray-300)', borderRadius: 99, margin: '0 auto 20px' }} />
             )}
+
             <div style={{ fontSize: 44, marginBottom: 14 }}>🗑️</div>
+
             <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 10 }}>
               Eliminar obra
             </h3>
+
             <p style={{ color: 'var(--gray-500)', fontSize: 14, marginBottom: 28 }}>
               ¿Estás seguro de que deseas eliminar esta obra? Esta acción no se puede deshacer.
             </p>
+
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexDirection: isMobile ? 'column-reverse' : 'row' }}>
               <button
                 onClick={() => setDeleteTarget(null)}
@@ -388,6 +476,7 @@ function App() {
               >
                 Cancelar
               </button>
+
               <button
                 onClick={() => handleDelete(deleteTarget)}
                 style={{ padding: '11px 24px', borderRadius: 8, border: 'none', background: 'var(--red)', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}

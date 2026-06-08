@@ -25,19 +25,78 @@ function Field({ label, children, hint }) {
   )
 }
 
-export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgregarSubetapa }) {
+function parseMiles(str) {
+  if (!str) return null
+  const num = Number(String(str).replace(/\./g, '').replace(/,/g, ''))
+  return isNaN(num) ? null : num
+}
+
+function ModalConfirmarEliminar({ nombre, isSubtarea, onConfirm, onClose }) {
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16, backdropFilter: 'blur(3px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div style={{ background: 'white', borderRadius: 16, maxWidth: 400, width: '100%', padding: '32px 28px', textAlign: 'center', boxShadow: '0 24px 80px rgba(0,0,0,0.3)' }}>
+        <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#FEE2E2', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: 26 }}>
+          🗑️
+        </div>
+        <h3 style={{ fontSize: 17, fontWeight: 800, color: '#DC2626', marginBottom: 8 }}>
+          Eliminar {isSubtarea ? 'subetapa' : 'etapa'}
+        </h3>
+        <p style={{ fontSize: 13, color: 'var(--gray-600)', lineHeight: 1.6, marginBottom: 8 }}>
+          ¿Estás seguro que querés eliminar <strong>"{nombre}"</strong>?
+        </p>
+        {!isSubtarea && (
+          <p style={{ fontSize: 12, color: '#F97316', fontWeight: 600, background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: '8px 12px', marginBottom: 8 }}>
+            ⚠ También se eliminarán todas sus subetapas.
+          </p>
+        )}
+        <p style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 28 }}>
+          Esta acción <strong>no se puede deshacer</strong>.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <button
+            onClick={onClose}
+            style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: '#DC2626', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(220,38,38,0.4)' }}
+          >
+            Sí, eliminar
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgregarSubetapa, onDelete }) {
   const isNueva    = !tarea?.id
   const isSubtarea = tarea?.parentId !== null && tarea?.parentId !== undefined
 
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
+
   const [form, setForm] = useState({
-    nombre:       tarea?.nombre      || '',
-    fechaInicio:  tarea?.fechaInicio || '',
-    duracionDias: String(tarea?.duracionDias ?? 5),
-    pesoRelativo: String(tarea?.pesoRelativo ?? 10),
-    dependeDeId:  tarea?.dependeDeId  ?? null,
-    tipoVinculo:  tarea?.tipoVinculo  || 'Fin a inicio',
-    desfaseDias:  String(tarea?.desfaseDias ?? 0),
+    nombre:         tarea?.nombre      || '',
+    fechaInicio:    tarea?.fechaInicio || '',
+    duracionDias:   String(tarea?.duracionDias ?? 5),
+    pesoRelativo:   String(tarea?.pesoRelativo ?? 10),
+    dependeDeId:    tarea?.dependeDeId  ?? null,
+    tipoVinculo:    tarea?.tipoVinculo  || 'Fin a inicio',
+    desfaseDias:    String(tarea?.desfaseDias ?? 0),
+    presupuestoRaw: tarea?.presupuesto != null ? Number(tarea.presupuesto).toLocaleString('es-AR') : '',
   })
+
+  const [adicionales, setAdicionales] = useState(
+    (tarea?.adicionales || []).map(a => ({
+      ...a,
+      montoRaw: a.monto != null ? Number(a.monto).toLocaleString('es-AR') : '',
+    }))
+  )
 
   const calcFechaInicioDesde = (predId, desfase) => {
     const pred = tareas.find(t => t.id === Number(predId))
@@ -57,132 +116,264 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
       ...tarea,
       ...form,
       fechaFin,
-      tipoVinculo:   'Fin a inicio',
-      duracionDias:  Number(form.duracionDias),
-      pesoRelativo:  Number(form.pesoRelativo),
-      desfaseDias:   Number(form.desfaseDias),
-      dependeDeId:   form.dependeDeId ? Number(form.dependeDeId) : null,
+      tipoVinculo:  'Fin a inicio',
+      duracionDias: Number(form.duracionDias),
+      pesoRelativo: Number(form.pesoRelativo),
+      desfaseDias:  Number(form.desfaseDias),
+      dependeDeId:  form.dependeDeId ? Number(form.dependeDeId) : null,
+      presupuesto:  parseMiles(form.presupuestoRaw),
+      adicionales:  adicionales.map(a => ({
+        id:     a.id,
+        motivo: a.motivo || '',
+        monto:  parseMiles(a.montoRaw),
+      })),
     })
   }
 
-  // Excluir la tarea actual y sus hijos del selector de predecesoras
+  const handleConfirmDelete = () => {
+    onDelete(tarea.id)
+    onClose()
+  }
+
+  const addAdicional = () => {
+    setAdicionales(prev => [...prev, { id: Date.now(), montoRaw: '', motivo: '' }])
+  }
+
+  const removeAdicional = (id) => {
+    setAdicionales(prev => prev.filter(a => a.id !== id))
+  }
+
+  const updateAdicional = (id, field, value) => {
+    setAdicionales(prev => prev.map(a => a.id === id ? { ...a, [field]: value } : a))
+  }
+
   const opcionesPredecesora = tareas.filter(t => t.id !== tarea?.id && t.parentId !== tarea?.id)
 
+  const totalAdicionales = adicionales.reduce((s, a) => s + (parseMiles(a.montoRaw) || 0), 0)
+  const presupuestoBase  = parseMiles(form.presupuestoRaw) || 0
+  const totalGeneral     = presupuestoBase + totalAdicionales
+
   return (
-    <div
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16, backdropFilter: 'blur(2px)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div style={{ background: 'white', borderRadius: 16, width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
-        {/* Header */}
-        <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          <div>
-            <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-900)', marginBottom: 2 }}>
-              {isNueva ? (isSubtarea ? 'Nueva subetapa' : 'Nueva etapa') : (isSubtarea ? 'Editar subetapa' : 'Editar etapa')}
-            </h3>
-            {tarea?.nombre && !isNueva && (
-              <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{tarea.nombre}</div>
-            )}
+    <>
+      <div
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16, backdropFilter: 'blur(2px)' }}
+        onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      >
+        <div style={{ background: 'white', borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', display: 'flex', flexDirection: 'column', maxHeight: '92vh' }}>
+
+          <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 800, color: 'var(--gray-900)', marginBottom: 2 }}>
+                {isNueva ? (isSubtarea ? 'Nueva subetapa' : 'Nueva etapa') : (isSubtarea ? 'Editar subetapa' : 'Editar etapa')}
+              </h3>
+              {tarea?.nombre && !isNueva && <div style={{ fontSize: 11, color: 'var(--gray-500)' }}>{tarea.nombre}</div>}
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--gray-400)', lineHeight: 1, padding: '4px 8px' }}>×</button>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--gray-400)', lineHeight: 1, padding: '4px 8px' }}>×</button>
-        </div>
 
-        {/* Body */}
-        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
-          <Field label="Nombre de etapa">
-            <input style={inputStyle} value={form.nombre} autoFocus
-              placeholder={isSubtarea ? 'Ej: Excavación' : 'Ej: Fundaciones'}
-              onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
-          </Field>
+          <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Inicio" hint="Días hábiles (lun–vie, sin feriados)">
+            <Field label="Nombre de etapa">
+              <input style={inputStyle} value={form.nombre} autoFocus
+                placeholder={isSubtarea ? 'Ej: Excavación' : 'Ej: Fundaciones'}
+                onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
+            </Field>
+
+            <Field label="Fecha de inicio" hint="Días hábiles (lun–vie, sin feriados)">
               <input type="date" style={inputStyle} value={form.fechaInicio}
                 onChange={e => setForm(f => ({ ...f, fechaInicio: e.target.value }))} />
             </Field>
+
             <Field label="Duración (días hábiles)">
               <input type="number" min={1} style={inputStyle} value={form.duracionDias}
                 onChange={e => setForm(f => ({ ...f, duracionDias: e.target.value }))} />
             </Field>
-          </div>
 
-          <Field label="Fin estimado" hint="Calculado desde inicio + duración hábiles">
-            <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none' }}>
-              {fechaFin ? fmtLong(fechaFin) : '—'}
-            </div>
-          </Field>
-
-          <Field label="Incidencia %">
-            <input type="number" min={0} max={100} style={inputStyle} value={form.pesoRelativo}
-              onChange={e => setForm(f => ({ ...f, pesoRelativo: e.target.value }))} />
-          </Field>
-
-          {/* Dependencias */}
-          <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 16, marginBottom: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-              Dependencia
-            </div>
-
-            <Field label="Predecesora">
-              <select style={inputStyle}
-                value={form.dependeDeId ?? ''}
-                onChange={e => {
-                  const predId = e.target.value ? Number(e.target.value) : null
-                  const newFI = predId ? calcFechaInicioDesde(predId, form.desfaseDias) : form.fechaInicio
-                  setForm(f => ({ ...f, dependeDeId: predId, fechaInicio: newFI }))
-                }}>
-                <option value="">Ninguna</option>
-                {opcionesPredecesora.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.parentId !== null ? '    └ ' : ''}{t.nombre}
-                  </option>
-                ))}
-              </select>
+            <Field label="Fin estimado" hint="Calculado desde inicio + duración hábiles">
+              <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none' }}>
+                {fechaFin ? fmtLong(fechaFin) : '—'}
+              </div>
             </Field>
 
-            {form.dependeDeId && (
-              <Field label="Días de desfase" hint="Días hábiles — se suman al fin de la predecesora">
-                <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
+            <Field label="Incidencia %">
+              <input type="number" min={0} max={100} style={inputStyle} value={form.pesoRelativo}
+                onChange={e => setForm(f => ({ ...f, pesoRelativo: e.target.value }))} />
+            </Field>
+
+            <Field label="Presupuesto base" hint="Monto original de contrato para esta etapa">
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+                <input
+                  type="text" inputMode="numeric"
+                  style={{ ...inputStyle, paddingLeft: 26 }}
+                  placeholder="0"
+                  value={form.presupuestoRaw}
                   onChange={e => {
-                    const desfase = e.target.value
-                    const newFI = calcFechaInicioDesde(form.dependeDeId, desfase)
-                    setForm(f => ({ ...f, desfaseDias: desfase, fechaInicio: newFI }))
-                  }} />
+                    const raw = e.target.value.replace(/\D/g, '')
+                    setForm(f => ({ ...f, presupuestoRaw: raw ? Number(raw).toLocaleString('es-AR') : '' }))
+                  }}
+                />
+              </div>
+            </Field>
+
+            <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Adicionales {adicionales.length > 0 && `(${adicionales.length})`}
+                </span>
+                <button
+                  onClick={addAdicional}
+                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px dashed var(--orange)', background: 'white', color: 'var(--orange)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  + Agregar adicional
+                </button>
+              </div>
+
+              {adicionales.length === 0 && (
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center', padding: '10px 0' }}>
+                  Sin adicionales cargados
+                </div>
+              )}
+
+              {adicionales.map((a, idx) => (
+                <div key={a.id} style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--orange)' }}>Adicional #{idx + 1}</span>
+                    <button onClick={() => removeAdicional(a.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}>×</button>
+                  </div>
+                  <div style={{ marginBottom: 8 }}>
+                    <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 4 }}>Motivo</label>
+                    <input
+                      type="text"
+                      style={{ ...inputStyle, fontSize: 12 }}
+                      placeholder="Ej: Cambio de especificación, trabajo extra…"
+                      value={a.motivo}
+                      onChange={e => updateAdicional(a.id, 'motivo', e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 4 }}>Monto</label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+                      <input
+                        type="text" inputMode="numeric"
+                        style={{ ...inputStyle, paddingLeft: 26, fontSize: 12 }}
+                        placeholder="0"
+                        value={a.montoRaw}
+                        onChange={e => {
+                          const raw = e.target.value.replace(/\D/g, '')
+                          updateAdicional(a.id, 'montoRaw', raw ? Number(raw).toLocaleString('es-AR') : '')
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {(presupuestoBase > 0 || totalAdicionales > 0) && (
+                <div style={{ background: '#F9FAFB', border: '1px solid var(--gray-200)', borderRadius: 8, padding: '10px 14px', marginTop: 4 }}>
+                  {presupuestoBase > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--gray-600)', marginBottom: 4 }}>
+                      <span>Presupuesto base</span>
+                      <span>${presupuestoBase.toLocaleString('es-AR')}</span>
+                    </div>
+                  )}
+                  {totalAdicionales > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--orange)', marginBottom: 4 }}>
+                      <span>Adicionales</span>
+                      <span>+${totalAdicionales.toLocaleString('es-AR')}</span>
+                    </div>
+                  )}
+                  {presupuestoBase > 0 && totalAdicionales > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 800, color: 'var(--gray-800)', borderTop: '1px solid var(--gray-200)', paddingTop: 6, marginTop: 2 }}>
+                      <span>Total</span>
+                      <span>${totalGeneral.toLocaleString('es-AR')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+                Dependencia
+              </div>
+              <Field label="Predecesora">
+                <select style={inputStyle}
+                  value={form.dependeDeId ?? ''}
+                  onChange={e => {
+                    const predId = e.target.value ? Number(e.target.value) : null
+                    const newFI = predId ? calcFechaInicioDesde(predId, form.desfaseDias) : form.fechaInicio
+                    setForm(f => ({ ...f, dependeDeId: predId, fechaInicio: newFI }))
+                  }}>
+                  <option value="">Ninguna</option>
+                  {opcionesPredecesora.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.parentId !== null ? '    └ ' : ''}{t.nombre}
+                    </option>
+                  ))}
+                </select>
               </Field>
-            )}
+              {form.dependeDeId && (
+                <Field label="Días de desfase" hint="Días hábiles — se suman al fin de la predecesora">
+                  <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
+                    onChange={e => {
+                      const desfase = e.target.value
+                      const newFI = calcFechaInicioDesde(form.dependeDeId, desfase)
+                      setForm(f => ({ ...f, desfaseDias: desfase, fechaInicio: newFI }))
+                    }} />
+                </Field>
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div style={{ padding: '14px 24px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-          {!isSubtarea && onAgregarSubetapa && !isNueva ? (
-            <button
-              onClick={() => onAgregarSubetapa(tarea)}
-              style={{ padding: '8px 14px', borderRadius: 7, border: '1px dashed var(--orange)', background: 'white', color: 'var(--orange)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-            >
-              + Nueva subetapa
-            </button>
-          ) : <div />}
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={onClose}
-              style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>
-              Cancelar
-            </button>
-            <button onClick={handleSave} disabled={!canSave}
-              style={{
-                padding: '9px 18px', borderRadius: 8, border: 'none',
-                background: canSave ? 'var(--orange)' : 'var(--gray-200)',
-                color: canSave ? 'white' : 'var(--gray-400)',
-                cursor: canSave ? 'pointer' : 'default',
-                fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
-                boxShadow: canSave ? '0 2px 8px rgba(249,115,22,0.4)' : 'none',
-              }}>
-              Guardar
-            </button>
+          <div style={{ padding: '12px 20px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {!isSubtarea && onAgregarSubetapa && !isNueva && (
+                <button onClick={() => onAgregarSubetapa(tarea)}
+                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px dashed var(--orange)', background: 'white', color: 'var(--orange)', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  + Nueva subetapa
+                </button>
+              )}
+              {!isNueva && onDelete && (
+                <button
+                  onClick={() => setShowConfirmDelete(true)}
+                  style={{ padding: '8px 14px', borderRadius: 7, border: '1px solid #FECACA', background: '#FFF5F5', color: '#DC2626', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  🗑 Eliminar
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={onClose}
+                style={{ padding: '9px 18px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>
+                Cancelar
+              </button>
+              <button onClick={handleSave} disabled={!canSave}
+                style={{
+                  padding: '9px 18px', borderRadius: 8, border: 'none',
+                  background: canSave ? 'var(--orange)' : 'var(--gray-200)',
+                  color: canSave ? 'white' : 'var(--gray-400)',
+                  cursor: canSave ? 'pointer' : 'default',
+                  fontWeight: 700, fontSize: 13, fontFamily: 'inherit',
+                  boxShadow: canSave ? '0 2px 8px rgba(249,115,22,0.4)' : 'none',
+                }}>
+                Guardar
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+
+      {showConfirmDelete && (
+        <ModalConfirmarEliminar
+          nombre={tarea.nombre}
+          isSubtarea={isSubtarea}
+          onClose={() => setShowConfirmDelete(false)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
+    </>
   )
 }

@@ -105,8 +105,10 @@ function CronogramasPage({ projects }) {
   // ── Zoom con rueda del mouse ─────────────────────────────────────────────
   // Ref-callback para evitar closures obsoletas con listeners passivos=false
   const wheelCbRef = useRef()
-  wheelCbRef.current = (e) => {
-    e.preventDefault()
+wheelCbRef.current = (e) => {
+  if (!e.ctrlKey && !e.metaKey) return
+  e.preventDefault()
+  
     const el  = scrollRef.current
     if (!el)  return
 
@@ -437,7 +439,7 @@ function CronogramasPage({ projects }) {
             <span style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 500 }}>Hoy</span>
           </div>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>
-            {isMobile ? '← deslizá para navegar →' : 'Rueda del mouse para zoom · deslizá para navegar'}
+            {isMobile ? '← deslizá para navegar →' : 'Ctrl + rueda para zoom · rueda para desplazar'}
           </span>
         </div>
       </div>
