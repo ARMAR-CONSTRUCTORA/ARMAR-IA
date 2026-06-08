@@ -7,7 +7,7 @@ import {
   actualizarItem,
   eliminarItem,
   eliminarCapitulo,
-} from "./supabase";
+} from "../supabase";
 
 const USD_RATE_DEFAULT = 1250;
 
