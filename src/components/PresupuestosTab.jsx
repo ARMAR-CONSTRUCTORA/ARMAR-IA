@@ -1,4 +1,3 @@
-import { useState, useMemo, useEffect } from "react";
 import {
   getPresupuestoVigente,
   crearPresupuestoBase,
@@ -7,7 +6,7 @@ import {
   actualizarItem,
   eliminarItem,
   eliminarCapitulo,
-} from "../supabase";
+} from "../lib/supabase";
 
 const USD_RATE_DEFAULT = 1250;
 
