@@ -499,14 +499,20 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   )
 }
 
-function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, onGuardar }) {
+function ModalCertificado({ tareas, certificados, numero, teamMembers, editCert, onClose, onGuardar }) {
   const etapas = tareas.filter(t => t.parentId === null && calcTotalEtapa(t) > 0)
-  const [fecha,         setFecha]         = useState(new Date().toISOString().slice(0, 10))
-  const [responsable,   setResponsable]   = useState('')
-  const [observaciones, setObservaciones] = useState('')
-  const [incluidas,     setIncluidas]     = useState(new Set(etapas.map(t => t.id)))
-  const [montos,        setMontos]        = useState({})
+  const [fecha,         setFecha]         = useState(editCert?.fecha ?? new Date().toISOString().slice(0, 10))
+  const [responsable,   setResponsable]   = useState(editCert?.responsable ?? '')
+  const [observaciones, setObservaciones] = useState(editCert?.observaciones ?? '')
+  const [incluidas,     setIncluidas]     = useState(() => editCert
+    ? new Set((editCert.etapas || []).map(e => e.tareaId))
+    : new Set(etapas.map(t => t.id)))
+  const [montos,        setMontos]        = useState(() => editCert
+    ? Object.fromEntries((editCert.etapas || []).map(e => [e.tareaId, e.montoPagado ? Number(e.montoPagado).toLocaleString('es-AR') : '']))
+    : {})
   const [errorModal,    setErrorModal]    = useState(null)
+
+  const certsParaValidacion = editCert ? certificados.filter(c => c.id !== editCert.id) : certificados
 
   const toggleIncluida = (id) => setIncluidas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
@@ -522,7 +528,7 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
     const excedentes = [...incluidas].filter(id => {
       const etapa  = tareas.find(t => t.id === id)
       const total  = calcTotalEtapa(etapa)
-      const pagado = calcPagadoAcumulado(id, certificados)
+      const pagado = calcPagadoAcumulado(id, certsParaValidacion)
       const saldo  = total - pagado
       const monto  = parseMiles(montos[id] || '')
       return monto > saldo
@@ -537,7 +543,11 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
       montoPagado: parseMiles(montos[id] || ''),
       totalEtapa:  calcTotalEtapa(tareas.find(t => t.id === id)),
     }))
-    onGuardar({ id: `cert-${Date.now()}`, numero, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert })
+    if (editCert) {
+      onGuardar({ ...editCert, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert, editadoEn: Date.now() })
+    } else {
+      onGuardar({ id: `cert-${Date.now()}`, numero, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert })
+    }
     onClose()
   }
 
@@ -547,8 +557,8 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
       <div style={{ background: 'white', borderRadius: 18, width: '100%', maxWidth: 680, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}>
         <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
-            <h2 style={{ fontSize: 17, fontWeight: 900, color: 'var(--gray-900)', marginBottom: 2 }}>Certificado de pago #{numero}</h2>
-            <p style={{ fontSize: 12, color: 'var(--gray-500)' }}>Seleccioná las etapas e ingresá los montos abonados</p>
+            <h2 style={{ fontSize: 17, fontWeight: 900, color: 'var(--gray-900)', marginBottom: 2 }}>{editCert ? `Editar certificado #${editCert.numero ?? numero}` : `Certificado de pago #${numero}`}</h2>
+            <p style={{ fontSize: 12, color: 'var(--gray-500)' }}>{editCert ? 'Modificá los montos y datos del certificado' : 'Seleccioná las etapas e ingresá los montos abonados'}</p>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--gray-400)', padding: '4px 8px' }}>×</button>
         </div>
@@ -578,7 +588,7 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
             {etapas.map(etapa => {
               const total     = calcTotalEtapa(etapa)
-              const pagado    = calcPagadoAcumulado(etapa.id, certificados)
+              const pagado    = calcPagadoAcumulado(etapa.id, certsParaValidacion)
               const saldo     = total - pagado
               const estaInc   = incluidas.has(etapa.id)
               const montoPag  = parseMiles(montos[etapa.id] || '')
@@ -627,8 +637,8 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>Cancelar</button>
           <button onClick={handleGuardar} disabled={totalCertificado === 0}
-            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: totalCertificado > 0 ? '#3B82F6' : 'var(--gray-200)', color: totalCertificado > 0 ? 'white' : 'var(--gray-400)', cursor: totalCertificado > 0 ? 'pointer' : 'default', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: totalCertificado > 0 ? '0 2px 8px rgba(59,130,246,0.4)' : 'none' }}>
-            Guardar certificado
+            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: totalCertificado > 0 ? (editCert ? '#E8641A' : '#3B82F6') : 'var(--gray-200)', color: totalCertificado > 0 ? 'white' : 'var(--gray-400)', cursor: totalCertificado > 0 ? 'pointer' : 'default', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: totalCertificado > 0 ? `0 2px 8px ${editCert ? 'rgba(232,100,26,0.4)' : 'rgba(59,130,246,0.4)'}` : 'none' }}>
+            {editCert ? 'Guardar cambios' : 'Guardar certificado'}
           </button>
         </div>
       </div>
@@ -646,8 +656,9 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, onClose, 
   )
 }
 
-function HistorialCertificados({ certificados, isEditor }) {
-  const [expandedIds, setExpandedIds] = useState(new Set())
+function HistorialCertificados({ certificados, isEditor, onEditar, onEliminarCertificado }) {
+  const [expandedIds,    setExpandedIds]    = useState(new Set())
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   if (!certificados || !certificados.length) return null
   const toggle = (id) => setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   return (
@@ -670,9 +681,24 @@ function HistorialCertificados({ certificados, isEditor }) {
                 <div style={{ fontSize: 11, color: 'var(--gray-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmtLong(cert.fecha)} · {cert.responsable}</div>
               </div>
               <div style={{ textAlign: 'right', marginRight: 8, flexShrink: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 900, color: '#1D4ED8' }}>{fmtPesos(cert.totalCertificado)}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#1D4ED8' }}>{fmtPesos(cert.totalCertificado)}</div>
+                  {cert.editadoEn && <span style={{ fontSize: 9, fontWeight: 700, color: '#E8641A', background: '#FFF3EB', border: '1px solid #F28C4E', borderRadius: 4, padding: '1px 5px' }}>editado</span>}
+                </div>
                 <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>{(cert.etapas || []).length} etapa{(cert.etapas || []).length !== 1 ? 's' : ''}</div>
               </div>
+              {isEditor && onEditar && (
+                <button onClick={e => { e.stopPropagation(); onEditar(cert) }}
+                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #E0DDD8', background: 'white', color: '#E8641A', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                  ✏ Editar
+                </button>
+              )}
+              {isEditor && onEliminarCertificado && (
+                <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(cert.id) }}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #FCA5A5', background: 'white', color: '#C0392B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, lineHeight: 1 }}>
+                  🗑
+                </button>
+              )}
               <span style={{ fontSize: 10, color: 'var(--gray-400)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>▶</span>
             </div>
             {isExpanded && (
@@ -697,12 +723,32 @@ function HistorialCertificados({ certificados, isEditor }) {
           </div>
         )
       })}
+      {confirmDeleteId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 14, maxWidth: 380, width: '100%', padding: '28px 24px', boxShadow: '0 16px 48px rgba(0,0,0,0.2)', border: '1px solid #E0DDD8', textAlign: 'center' }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>🗑</div>
+            <h3 style={{ fontSize: 15, fontWeight: 800, color: '#1A1A1A', marginBottom: 8 }}>¿Eliminar certificado?</h3>
+            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6, marginBottom: 24 }}>Esta acción no se puede deshacer. El certificado se eliminará del historial.</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button onClick={() => setConfirmDeleteId(null)}
+                style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #E0DDD8', background: 'white', color: '#444', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancelar
+              </button>
+              <button onClick={() => { onEliminarCertificado(confirmDeleteId); setConfirmDeleteId(null) }}
+                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#C0392B', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
-  const [expandedIds, setExpandedIds] = useState(new Set())
+function HistorialInformes({ informes, tareas, onEditar, onEliminarInforme, isEditor }) {
+  const [expandedIds,     setExpandedIds]     = useState(new Set())
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   if (!informes || !informes.length) return null
   const toggle = (id) => setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   return (
@@ -738,6 +784,12 @@ function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
                 <button onClick={e => { e.stopPropagation(); onEditar(informe) }}
                   style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                   Editar
+                </button>
+              )}
+              {isEditor && onEliminarInforme && (
+                <button onClick={e => { e.stopPropagation(); setConfirmDeleteId(informe.id) }}
+                  style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #FCA5A5', background: 'white', color: '#C0392B', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, lineHeight: 1 }}>
+                  🗑
                 </button>
               )}
               <span style={{ fontSize: 10, color: 'var(--gray-400)', transition: 'transform 0.15s', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', flexShrink: 0 }}>▶</span>
@@ -784,6 +836,25 @@ function HistorialInformes({ informes, tareas, onEditar, isEditor }) {
           </div>
         )
       })}
+      {confirmDeleteId && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 14, maxWidth: 380, width: '100%', padding: '28px 24px', boxShadow: '0 16px 48px rgba(0,0,0,0.2)', border: '1px solid #E0DDD8', textAlign: 'center' }}>
+            <div style={{ fontSize: 28, marginBottom: 10 }}>🗑</div>
+            <h3 style={{ fontSize: 15, fontWeight: 800, color: '#1A1A1A', marginBottom: 8 }}>¿Eliminar informe?</h3>
+            <p style={{ fontSize: 13, color: '#444', lineHeight: 1.6, marginBottom: 24 }}>El informe se eliminará y el avance de las tareas se recalculará desde los informes restantes.</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button onClick={() => setConfirmDeleteId(null)}
+                style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #E0DDD8', background: 'white', color: '#444', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancelar
+              </button>
+              <button onClick={() => { onEliminarInforme(confirmDeleteId); setConfirmDeleteId(null) }}
+                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: '#C0392B', color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Eliminar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1079,6 +1150,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const [structuralMode,  setStructuralMode]   = useState(false)
   const [editingTarea,    setEditingTarea]     = useState(null)
   const [editingInforme,  setEditingInforme]   = useState(null)
+  const [editingCert,     setEditingCert]      = useState(null)
   const [showDeleteModal, setShowDeleteModal]  = useState(false)
   const [cascadeData,     setCascadeData]      = useState(null)
   const [zoomIdx,         setZoomIdx]          = useState(1)
@@ -1163,6 +1235,38 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
   const handleGuardarCertificado = (cert) =>
     onSaveCronograma(project.id, cronograma.id, { certificados: [...certificados, cert] })
+
+  const handleEditarCertificado = (updatedCert) =>
+    onSaveCronograma(project.id, cronograma.id, { certificados: certificados.map(c => c.id === updatedCert.id ? updatedCert : c) })
+
+  const handleEliminarCertificado = (certId) => {
+    const certsRestantes = certificados.filter(c => c.id !== certId)
+    const hasCertAvance = certsRestantes.some(c => (c.etapas || []).some(e => e.avanceCargado != null))
+    if (hasCertAvance) {
+      const avanceMap = {}
+      tareas.forEach(t => { avanceMap[t.id] = 0 })
+      certsRestantes.forEach(cert => {
+        (cert.etapas || []).forEach(e => {
+          if (e.avanceCargado != null) avanceMap[e.tareaId] = Math.min(100, (avanceMap[e.tareaId] || 0) + e.avanceCargado)
+        })
+      })
+      const tareasActualizadas = tareas.map(t => ({ ...t, avanceActual: avanceMap[t.id] ?? 0 }))
+      onSaveCronograma(project.id, cronograma.id, { certificados: certsRestantes, tareas: tareasActualizadas })
+    } else {
+      onSaveCronograma(project.id, cronograma.id, { certificados: certsRestantes })
+    }
+  }
+
+  const handleEliminarInforme = (informeId) => {
+    const informesRestantes = informes.filter(i => i.id !== informeId)
+    const avanceMap = {}
+    tareas.forEach(t => { avanceMap[t.id] = 0 })
+    informesRestantes.forEach(inf => {
+      (inf.avancesTareas || []).forEach(at => { avanceMap[at.tareaId] = at.avanceNuevo })
+    })
+    const tareasActualizadas = tareas.map(t => ({ ...t, avanceActual: avanceMap[t.id] ?? 0 }))
+    onSaveCronograma(project.id, cronograma.id, { informes: informesRestantes, tareas: tareasActualizadas })
+  }
 
   const exportarPDF = async () => {
     setExportando(true)
@@ -1267,12 +1371,13 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         <StatsPanel tareas={tareas} avanceGeneral={avanceGeneral} informes={informes} certificados={certificados} />
       </div>
 
-      <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} isEditor={isEditor} />
-      <HistorialCertificados certificados={certificados} isEditor={isEditor} />
+      <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} onEliminarInforme={isEditor ? handleEliminarInforme : null} isEditor={isEditor} />
+      <HistorialCertificados certificados={certificados} isEditor={isEditor} onEditar={isEditor ? setEditingCert : null} onEliminarCertificado={isEditor ? handleEliminarCertificado : null} />
 
       {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />}
-      {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} onClose={() => setShowAvanceModal(false)} onGuardar={(pid, informe, tareasActualizadas) => { onCargarAvance(pid, cronograma.id, informe, tareasActualizadas); setShowAvanceModal(false) }} />}
+      {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} certificados={certificados} onGuardar={(pid, informe, tareasActualizadas, certData) => { onCargarAvance(pid, cronograma.id, informe, tareasActualizadas, certData) }} onClose={() => setShowAvanceModal(false)} />}
       {showCertModal && <ModalCertificado tareas={tareas} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
+      {editingCert && <ModalCertificado tareas={tareas} certificados={certificados} numero={editingCert.numero} teamMembers={teamMembers} editCert={editingCert} onClose={() => setEditingCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setEditingCert(null) }} />}
       {editingTarea && (
         <ModalEditarEtapa
           tarea={editingTarea}

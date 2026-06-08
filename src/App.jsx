@@ -205,7 +205,7 @@ function App() {
     await upsertCronograma(updated)
   }
 
-  const handleCargarAvance = async (projectId, cronId, informe, tareasActualizadas) => {
+  const handleCargarAvance = async (projectId, cronId, informe, tareasActualizadas, certData) => {
     const existing = cronogramas[projectId]?.find(c => c.id === cronId)
     if (!existing) return
 
@@ -213,6 +213,7 @@ function App() {
       ...existing,
       tareas: tareasActualizadas,
       informes: [...(existing.informes || []), informe],
+      certificados: certData ? [...(existing.certificados || []), certData] : (existing.certificados || []),
     }
 
     const totalPeso = tareasActualizadas

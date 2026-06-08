@@ -51,13 +51,14 @@ function TeamSelect({ value, onChange, teamMembers }) {
   )
 }
 
-export default function ModalCargarAvance({ project, cronograma, numero, teamMembers, onGuardar, onClose }) {
+export default function ModalCargarAvance({ project, cronograma, numero, teamMembers, certificados, onGuardar, onGuardarCertificado, onClose }) {
   const { isMobile, isTablet } = useBreakpoint()
   const [fecha, setFecha] = useState(today)
   const [responsable, setResponsable] = useState(project.responsible || '')
   const [inputValues, setInputValues] = useState({})  // tareaId → cargar ahora %
   const [observaciones, setObservaciones] = useState('')
   const [fotos, setFotos] = useState([null, null, null])
+  const [showConfirm, setShowConfirm] = useState(false)
   const fileRefs = [useRef(), useRef(), useRef()]
 
   const tareas = cronograma.tareas || []
@@ -113,13 +114,11 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
     reader.readAsDataURL(file)
   }
 
-  const handleGuardar = () => {
-    // Build updated tareas
+  const buildGuardado = () => {
     const tareasActualizadas = tareas.map(t => {
       const hijos = tareas.filter(h => h.parentId === t.id)
       let nuevoAvance
       if (hijos.length) {
-        // etapa con hijos: promedio ponderado automático
         const totalPeso = hijos.reduce((s, h) => s + (h.pesoRelativo || 1), 0)
         nuevoAvance = Math.round(
           hijos.reduce((s, h) => s + getAcumulado(h) * (h.pesoRelativo || 1), 0) / Math.max(1, totalPeso)
@@ -129,7 +128,6 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
       }
       return { ...t, avanceActual: nuevoAvance, estado: estadoFromAvance(nuevoAvance) }
     })
-
     const avancesTareas = tareas
       .filter(t => (Number(inputValues[t.id]) || 0) > 0)
       .map(t => ({
@@ -138,7 +136,6 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
         avanceAnterior: t.avanceActual,
         avanceNuevo: Math.min(100, t.avanceActual + (Number(inputValues[t.id]) || 0)),
       }))
-
     const informe = {
       id: `inf-${Date.now()}`,
       numero,
@@ -150,14 +147,47 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
       avanceGeneral: avanceNuevo,
       avancesTareas,
     }
+    return { tareasActualizadas, informe }
+  }
 
-    onGuardar(project.id, informe, tareasActualizadas)
+  const handleGuardar = () => setShowConfirm(true)
+
+  const ejecutarGuardar = (generarCert) => {
+    const { tareasActualizadas, informe } = buildGuardado()
+    let certData = null
+    if (generarCert) {
+      const certEtapas = tareas
+        .filter(t => (Number(inputValues[t.id]) || 0) > 0 && t.presupuesto > 0)
+        .map(t => {
+          const cargar = Number(inputValues[t.id]) || 0
+          return {
+            tareaId: t.id,
+            nombreTarea: t.nombre,
+            avanceCargado: cargar,
+            montoPagado: Math.round((cargar / 100) * t.presupuesto),
+            totalEtapa: t.presupuesto,
+          }
+        })
+      const montoTotal = certEtapas.reduce((s, e) => s + e.montoPagado, 0)
+      certData = {
+        id: `cert-${Date.now()}`,
+        numero: (certificados?.length || 0) + 1,
+        fecha,
+        responsable,
+        observaciones: '',
+        totalCertificado: montoTotal,
+        etapas: certEtapas,
+        estado: 'pendiente',
+      }
+    }
+    onGuardar(project.id, informe, tareasActualizadas, certData)
     onClose()
   }
 
   const hasChanges = Object.values(inputValues).some(v => v > 0)
 
   return (
+    <>
     <div
       style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
@@ -304,14 +334,23 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
                           <div style={{ padding: '9px 12px' }}>
                             <MiniBar value={hijo.avanceActual} />
                           </div>
-                          <div style={{ padding: '9px 12px', display: 'flex', alignItems: 'center' }}>
-                            <input type="number" min={0} max={100 - hijo.avanceActual}
-                              value={inputValues[hijo.id] || ''}
-                              onChange={e => setInput(hijo.id, e.target.value)}
-                              placeholder="0"
-                              style={{ width: 52, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', textAlign: 'center' }}
-                            />
-                          </div>
+                          {(() => {
+                            const cargar = Number(inputValues[hijo.id] || 0)
+                            const montoHijo = hijo.presupuesto > 0 ? Math.round((cargar / 100) * hijo.presupuesto) : 0
+                            return (
+                              <div style={{ padding: '9px 12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 4 }}>
+                                <input type="number" min={0} max={100 - hijo.avanceActual}
+                                  value={inputValues[hijo.id] || ''}
+                                  onChange={e => setInput(hijo.id, e.target.value)}
+                                  placeholder="0"
+                                  style={{ width: 52, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', textAlign: 'center' }}
+                                />
+                                {montoHijo > 0 && (
+                                  <span style={{ fontSize: 11, color: '#2D7A4F', fontWeight: 600 }}>≈ {fmtMonto(montoHijo)} por este avance</span>
+                                )}
+                              </div>
+                            )
+                          })()}
                           <div style={{ padding: '9px 12px', display: 'flex', alignItems: 'center' }}>
                             <span style={{ fontSize: 13, fontWeight: 800, color: progressColor(acum) }}>{acum}%</span>
                           </div>
@@ -417,5 +456,37 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
         </div>
       </div>
     </div>
+    {showConfirm && (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16, backdropFilter: 'blur(2px)' }}>
+        <div style={{ background: 'white', borderRadius: 16, width: '100%', maxWidth: 420, padding: '32px 28px', boxShadow: '0 20px 60px rgba(0,0,0,0.25)', border: '1px solid #E0DDD8' }}>
+          <div style={{ fontSize: 32, textAlign: 'center', marginBottom: 14 }}>🧾</div>
+          <h3 style={{ fontSize: 16, fontWeight: 900, color: '#1A1A1A', textAlign: 'center', marginBottom: 8 }}>¿Generar certificado de pago?</h3>
+          <p style={{ fontSize: 13, color: '#444', textAlign: 'center', lineHeight: 1.6, marginBottom: 28 }}>
+            Podés guardar solo el avance o también generar un certificado de pago asociado a esta carga.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              onClick={() => ejecutarGuardar(true)}
+              style={{ padding: '12px 20px', borderRadius: 9, border: 'none', background: '#E8641A', color: 'white', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', boxShadow: '0 2px 8px rgba(232,100,26,0.35)' }}
+            >
+              Guardar y generar certificado
+            </button>
+            <button
+              onClick={() => ejecutarGuardar(false)}
+              style={{ padding: '12px 20px', borderRadius: 9, border: '1px solid #E0DDD8', background: 'white', color: '#444', fontWeight: 600, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer' }}
+            >
+              Solo guardar avance
+            </button>
+            <button
+              onClick={() => setShowConfirm(false)}
+              style={{ padding: '8px 20px', borderRadius: 9, border: 'none', background: 'none', color: '#9CA3AF', fontWeight: 600, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer' }}
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
