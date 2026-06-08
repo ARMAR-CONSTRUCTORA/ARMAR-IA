@@ -12,16 +12,20 @@ function fromDbProject(row) {
   return {
     id:                  row.id,
     name:                row.name,
-    location:            row.location             || '',
-    startDate:           row.start_date           || '',
-    endDate:             row.end_date             || '',
-    progress:            row.progress             ?? 0,
-    responsible:         row.responsible          || '',
-    responsableProyecto: row.responsable_proyecto || '',
-    contratista:         row.contratista          || '',
-    proyecto:            row.proyecto             || '',
-    status:              row.status               || 'activa',
-    tasks:               row.tasks                || [],
+    location:            row.location              || '',
+    startDate:           row.start_date            || '',
+    endDate:             row.end_date              || '',
+    progress:            row.progress              ?? 0,
+    responsible:         row.responsible           || '',
+    responsableProyecto: row.responsable_proyecto  || '',
+    contratista:         row.contratista           || '',
+    proyecto:            row.proyecto              || '',
+    status:              row.status                || 'activa',
+    tasks:               row.tasks                 || [],
+    tipoObra:            row.tipo_obra             || '',
+    arquitectoProyecto:  row.arquitecto_proyecto   || '',
+    contactoArquitecto:  row.contacto_arquitecto   || '',
+    linkDocumentacion:   row.link_documentacion    || '',
   }
 }
 
@@ -39,6 +43,10 @@ function toDbProject(p) {
     proyecto:             p.proyecto             ?? null,
     status:               p.status               || 'activa',
     tasks:                p.tasks                || [],
+    tipo_obra:            p.tipoObra             ?? null,
+    arquitecto_proyecto:  p.arquitectoProyecto   ?? null,
+    contacto_arquitecto:  p.contactoArquitecto   ?? null,
+    link_documentacion:   p.linkDocumentacion    ?? null,
   }
 }
 
