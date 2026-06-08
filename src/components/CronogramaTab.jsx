@@ -704,13 +704,30 @@ function HistorialCertificados({ certificados, isEditor, onEditar, onEliminarCer
             {isExpanded && (
               <div style={{ borderTop: '1px solid #DBEAFE', padding: '14px 16px', background: '#F0F9FF' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: cert.observaciones ? 14 : 0 }}>
-                  {(cert.etapas || []).map(e => (
-                    <div key={e.tareaId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'white', borderRadius: 7, border: '1px solid #DBEAFE' }}>
-                      <span style={{ flex: 1, fontSize: 12, color: 'var(--gray-700)', fontWeight: 600 }}>{e.nombreTarea}</span>
-                      <span style={{ fontSize: 11, color: 'var(--gray-500)' }}>Contrato: {fmtPesos(e.totalEtapa)}</span>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: '#1D4ED8' }}>{fmtPesos(e.montoPagado)}</span>
-                    </div>
-                  ))}
+                  {(cert.etapas || []).map(e => {
+                    let avBefore = null
+                    if (e.avanceCargado != null) {
+                      const certIdx = certificados.findIndex(c => c.id === cert.id)
+                      avBefore = 0
+                      for (let j = 0; j < certIdx; j++) {
+                        const prevE = (certificados[j].etapas || []).find(pe => pe.tareaId === e.tareaId)
+                        if (prevE?.avanceCargado != null) avBefore = Math.min(100, avBefore + prevE.avanceCargado)
+                      }
+                    }
+                    const avAfter = avBefore != null ? Math.min(100, avBefore + e.avanceCargado) : null
+                    return (
+                      <div key={e.tareaId} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: 'white', borderRadius: 7, border: '1px solid #DBEAFE' }}>
+                        <span style={{ flex: 1, fontSize: 12, color: 'var(--gray-700)', fontWeight: 600 }}>{e.nombreTarea}</span>
+                        {avBefore != null && (
+                          <span style={{ fontSize: 11, color: '#3B82F6', fontWeight: 700, background: '#EFF6FF', borderRadius: 4, padding: '2px 7px', flexShrink: 0 }}>
+                            {avBefore}% → {avAfter}%
+                          </span>
+                        )}
+                        <span style={{ fontSize: 11, color: 'var(--gray-500)', flexShrink: 0 }}>Contrato: {fmtPesos(e.totalEtapa)}</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: '#1D4ED8', flexShrink: 0 }}>{fmtPesos(e.montoPagado)}</span>
+                      </div>
+                    )
+                  })}
                 </div>
                 {cert.observaciones && (
                   <div style={{ marginTop: 10 }}>
@@ -1241,8 +1258,10 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
   const handleEliminarCertificado = (certId) => {
     const certsRestantes = certificados.filter(c => c.id !== certId)
-    const hasCertAvance = certsRestantes.some(c => (c.etapas || []).some(e => e.avanceCargado != null))
-    if (hasCertAvance) {
+    const deletedCert = certificados.find(c => c.id === certId)
+    const anyHasAvance = (deletedCert?.etapas || []).some(e => e.avanceCargado != null) ||
+                         certsRestantes.some(c => (c.etapas || []).some(e => e.avanceCargado != null))
+    if (anyHasAvance) {
       const avanceMap = {}
       tareas.forEach(t => { avanceMap[t.id] = 0 })
       certsRestantes.forEach(cert => {

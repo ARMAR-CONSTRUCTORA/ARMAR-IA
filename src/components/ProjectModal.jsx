@@ -4,8 +4,22 @@ import LocationAutocomplete from './LocationAutocomplete'
 
 const CATEGORIES = ['OBRA', 'PROYECTO', 'GREMIOS']
 
+const TIPOS_OBRA = [
+  'Proyecto + Dirección + Construcción ARMAR',
+  'Dirección + Construcción sobre proyecto externo',
+  'Construcción sobre proyecto externo',
+]
+
+const STATUS_LABELS = { activa: 'Activa', terminada: 'Terminada', atrasada: 'Atrasada' }
+const STATUS_COLORS = {
+  activa:    { bg: '#DCFCE7', color: '#166534' },
+  terminada: { bg: '#DBEAFE', color: '#1E40AF' },
+  atrasada:  { bg: '#FEE2E2', color: '#991B1B' },
+}
+
 const EMPTY = {
   name:                '',
+  tipoObra:            '',
   location:            '',
   startDate:           '',
   endDate:             '',
@@ -15,6 +29,9 @@ const EMPTY = {
   proyecto:            '',
   progress:            0,
   status:              'activa',
+  arquitectoProyecto:  '',
+  contactoArquitecto:  '',
+  linkDocumentacion:   '',
 }
 
 function calcEndDate(startDate, valor, unidad) {
@@ -44,6 +61,31 @@ function Field({ label, required, error, children }) {
       </label>
       {children}
       {error && <p style={{ color: 'var(--red)', fontSize: 12, marginTop: 5 }}>{error}</p>}
+    </div>
+  )
+}
+
+function InfoRow({ label, value, link }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 3 }}>{label}</p>
+      {link && value ? (
+        <a
+          href={value}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            fontSize: 14, color: 'var(--orange)', fontWeight: 600,
+            textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4,
+          }}
+        >
+          Abrir carpeta ↗
+        </a>
+      ) : (
+        <p style={{ fontSize: 14, color: value ? 'var(--gray-800)' : 'var(--gray-400)', fontWeight: value ? 500 : 400 }}>
+          {value || '—'}
+        </p>
+      )}
     </div>
   )
 }
@@ -78,11 +120,14 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
   const [errors, setErrors]         = useState({})
   const [duracionValor, setDurVal]  = useState('')
   const [duracionUnidad, setDurUnd] = useState('Días')
+  // Vista: 'info' (solo lectura) o 'edit' (formulario)
+  const [mode, setMode] = useState('edit')
 
   useEffect(() => {
     if (project) {
       setForm({
         name:                project.name                ?? '',
+        tipoObra:            project.tipoObra            ?? '',
         location:            project.location            ?? '',
         startDate:           project.startDate           ?? '',
         endDate:             project.endDate             ?? '',
@@ -92,13 +137,26 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
         proyecto:            project.proyecto            ?? '',
         progress:            project.progress            ?? 0,
         status:              project.status              ?? 'activa',
+        arquitectoProyecto:  project.arquitectoProyecto  ?? '',
+        contactoArquitecto:  project.contactoArquitecto  ?? '',
+        linkDocumentacion:   project.linkDocumentacion   ?? '',
       })
-      setDurVal('')
+      // Recalcular duración en días desde fechas existentes
+      if (project.startDate && project.endDate) {
+        const start = new Date(project.startDate + 'T00:00:00')
+        const end   = new Date(project.endDate   + 'T00:00:00')
+        const dias  = Math.round((end - start) / (1000 * 60 * 60 * 24))
+        setDurVal(dias > 0 ? String(dias) : '')
+      } else {
+        setDurVal('')
+      }
       setDurUnd('Días')
+      setMode('info')
     } else {
       setForm(EMPTY)
       setDurVal('')
       setDurUnd('Días')
+      setMode('edit')
     }
     setErrors({})
   }, [project])
@@ -128,10 +186,14 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
     }
   }
 
+  const tieneProyectoExterno = form.tipoObra === 'Dirección + Construcción sobre proyecto externo' ||
+    form.tipoObra === 'Construcción sobre proyecto externo'
+
   const validate = () => {
     const e = {}
-    if (!form.name.trim())        e.name        = 'El nombre es requerido'
-    if (!form.location.trim())    e.location    = 'La ubicación es requerida'
+    if (!form.name.trim())                  e.name     = 'El nombre es requerido'
+    if (!project && !form.tipoObra)         e.tipoObra = 'El tipo de obra es requerido'
+    if (!form.location.trim())              e.location = 'La ubicación es requerida'
     if (!form.startDate)          e.startDate   = 'La fecha de inicio es requerida'
     if (!form.endDate)            e.endDate     = 'La fecha de finalización es requerida'
     if (!form.responsible.trim()) e.responsible = 'El responsable en obra es requerido'
@@ -155,6 +217,7 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
   })
 
   const col2 = (isMobile || isTablet) ? '1fr' : '1fr 1fr'
+  const statusStyle = STATUS_COLORS[form.status] || STATUS_COLORS.activa
 
   return (
     <div
@@ -193,14 +256,18 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
                 borderRadius: 8, display: 'flex', alignItems: 'center',
                 justifyContent: 'center', fontSize: 17,
               }}>
-                {project ? '✏️' : '🏗️'}
+                {!project ? '🏗️' : mode === 'info' ? 'ℹ️' : '✏️'}
               </div>
               <h2 style={{ fontSize: 19, fontWeight: 800, color: 'var(--gray-900)' }}>
-                {project ? 'Editar Obra' : 'Nueva Obra'}
+                {!project ? 'Nueva Obra' : mode === 'info' ? 'Información de la obra' : 'Editar Obra'}
               </h2>
             </div>
             <p style={{ color: 'var(--gray-400)', fontSize: 12, marginLeft: 44 }}>
-              {project ? 'Modificá los datos de la obra' : 'Completá el formulario para registrar una nueva obra'}
+              {!project
+                ? 'Completá el formulario para registrar una nueva obra'
+                : mode === 'info'
+                  ? 'Datos registrados de la obra'
+                  : 'Modificá los datos de la obra'}
             </p>
           </div>
           <button
@@ -214,152 +281,347 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
           >✕</button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          {/* Nombre */}
-          <Field label="Nombre de la obra" required error={errors.name}>
-            <input
-              type="text" value={form.name}
-              onChange={e => set('name', e.target.value)}
-              style={inputStyle(errors.name)}
-              placeholder="Ej: Torre Corporativa Norte"
-            />
-          </Field>
-
-          {/* Ubicación */}
-          <Field label="Ubicación" required error={errors.location}>
-            <LocationAutocomplete
-              value={form.location}
-              onChange={v => set('location', v)}
-              hasError={!!errors.location}
-            />
-          </Field>
-
-          {/* Fecha inicio + Duración + Fecha fin */}
-          <div style={{ display: 'grid', gridTemplateColumns: (isMobile || isTablet) ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
-            <Field label="Fecha de inicio" required error={errors.startDate}>
-              <input
-                type="date" value={form.startDate}
-                onChange={e => handleStartDateChange(e.target.value)}
-                style={inputStyle(errors.startDate)}
-              />
-            </Field>
-            <Field label="Duración">
-              <div style={{ display: 'flex', gap: 6 }}>
-                <input
-                  type="number" min={1} value={duracionValor}
-                  onChange={e => handleDurValChange(e.target.value)}
-                  placeholder="Ej: 8"
-                  style={{ ...inputStyle(false), flex: 1, minWidth: 0 }}
-                />
-                <select
-                  value={duracionUnidad}
-                  onChange={e => handleDurUndChange(e.target.value)}
-                  style={{ ...inputStyle(false), width: 'auto', minWidth: 80, padding: '10px 8px', cursor: 'pointer' }}
-                >
-                  <option>Días</option>
-                  <option>Semanas</option>
-                  <option>Meses</option>
-                </select>
-              </div>
-            </Field>
-            <Field label="Fecha de finalización" required error={errors.endDate}>
+        {/* ── MODO VISTA ─────────────────────────────────────────────────── */}
+        {mode === 'info' && project && (
+          <div>
+            {/* Badge tipo obra */}
+            {form.tipoObra && (
               <div style={{
-                ...inputStyle(errors.endDate),
-                background: form.endDate ? 'white' : '#F9FAFB',
-                color: form.endDate ? 'var(--gray-800)' : 'var(--gray-400)',
-                display: 'flex', alignItems: 'center',
-                cursor: 'default', userSelect: 'none',
+                display: 'inline-block',
+                background: '#FFF7ED', border: '1.5px solid #FED7AA',
+                borderRadius: 20, padding: '4px 12px',
+                fontSize: 12, fontWeight: 700, color: 'var(--orange)',
+                marginBottom: 20,
               }}>
-                {form.endDate ? fmtDate(form.endDate) : 'Se calcula automático'}
+                {form.tipoObra}
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: col2, gap: '0 24px' }}>
+              <InfoRow label="Nombre" value={form.name} />
+              <InfoRow label="Ubicación" value={form.location} />
+              <InfoRow label="Fecha de inicio" value={fmtDate(form.startDate)} />
+              <InfoRow label="Fecha de finalización" value={fmtDate(form.endDate)} />
+              <InfoRow label="Responsable en obra" value={form.responsible} />
+              <InfoRow label="Responsable de proyecto" value={form.responsableProyecto} />
+              <InfoRow label="Contratista principal" value={form.contratista} />
+              <InfoRow label="Proyecto" value={form.proyecto} />
+            </div>
+
+            {/* Estado */}
+            <div style={{ marginBottom: 14 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6 }}>Estado</p>
+              <span style={{
+                display: 'inline-block',
+                background: statusStyle.bg, color: statusStyle.color,
+                borderRadius: 20, padding: '4px 12px',
+                fontSize: 13, fontWeight: 700,
+              }}>
+                {STATUS_LABELS[form.status] || form.status}
+              </span>
+            </div>
+
+            {/* Proyecto externo */}
+            {tieneProyectoExterno && (form.arquitectoProyecto || form.contactoArquitecto) && (
+              <div style={{
+                background: '#FFF7ED', border: '1.5px solid #FED7AA',
+                borderRadius: 10, padding: '14px 16px', marginBottom: 16,
+              }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--orange)', marginBottom: 10, letterSpacing: 0.3 }}>
+                  PROYECTO EXTERNO
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: col2, gap: '0 24px' }}>
+                  <InfoRow label="Arquitecto/a del proyecto" value={form.arquitectoProyecto} />
+                  <InfoRow label="Contacto" value={form.contactoArquitecto} />
+                </div>
+              </div>
+            )}
+
+            {/* Documentación */}
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6 }}>Documentación</p>
+              {form.linkDocumentacion ? (
+                <a
+                  href={form.linkDocumentacion}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '8px 16px', borderRadius: 8,
+                    background: 'var(--orange)', color: 'white',
+                    fontWeight: 600, fontSize: 14, textDecoration: 'none',
+                    boxShadow: '0 2px 8px rgba(249,115,22,0.3)',
+                  }}
+                >
+                  Abrir carpeta ↗
+                </a>
+              ) : (
+                <p style={{ fontSize: 14, color: 'var(--gray-400)' }}>Sin enlace cargado</p>
+              )}
+            </div>
+
+            {/* Botones modo info */}
+            <div style={{
+              display: 'flex', gap: 10, justifyContent: 'flex-end',
+              paddingTop: 16, borderTop: '1px solid var(--gray-200)',
+              flexDirection: isMobile ? 'column-reverse' : 'row',
+            }}>
+              <button
+                type="button" onClick={onClose}
+                style={{
+                  padding: '11px 24px', borderRadius: 8,
+                  border: '1px solid var(--gray-200)', background: 'white',
+                  color: 'var(--gray-700)', cursor: 'pointer',
+                  fontWeight: 600, fontSize: 14, fontFamily: 'inherit',
+                }}
+              >
+                Cerrar
+              </button>
+              <button
+                type="button" onClick={() => setMode('edit')}
+                style={{
+                  padding: '11px 28px', borderRadius: 8, border: 'none',
+                  background: 'var(--orange)', color: 'white', cursor: 'pointer',
+                  fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
+                  boxShadow: '0 2px 8px rgba(249,115,22,0.4)',
+                }}
+              >
+                ✏️ Editar
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── MODO EDICIÓN ───────────────────────────────────────────────── */}
+        {mode === 'edit' && (
+          <form onSubmit={handleSubmit}>
+            {/* Nombre */}
+            <Field label="Nombre de la obra" required error={errors.name}>
+              <input
+                type="text" value={form.name}
+                onChange={e => set('name', e.target.value)}
+                style={inputStyle(errors.name)}
+                placeholder="Ej: Torre Corporativa Norte"
+              />
+            </Field>
+
+            {/* Tipo de obra */}
+            <Field label="Tipo de obra / servicio ARMAR" required={!project} error={errors.tipoObra}>
+              <select
+                value={form.tipoObra}
+                onChange={e => set('tipoObra', e.target.value)}
+                style={{
+                  ...inputStyle(errors.tipoObra),
+                  color: form.tipoObra ? 'var(--gray-800)' : 'var(--gray-400)',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value="">Seleccioná el tipo de encargo…</option>
+                {TIPOS_OBRA.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+
+            {/* Proyecto externo — aparece solo si aplica */}
+            {tieneProyectoExterno && (
+              <div style={{
+                background: '#FFF7ED',
+                border: '1.5px solid #FED7AA',
+                borderRadius: 10,
+                padding: '14px 16px',
+                marginBottom: 16,
+              }}>
+                <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--orange)', marginBottom: 12, letterSpacing: 0.3 }}>
+                  PROYECTO EXTERNO
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
+                  <Field label="Arquitecto/a del proyecto">
+                    <input
+                      type="text"
+                      value={form.arquitectoProyecto}
+                      onChange={e => set('arquitectoProyecto', e.target.value)}
+                      style={inputStyle(false)}
+                      placeholder="Nombre del/la arquitecto/a"
+                    />
+                  </Field>
+                  <Field label="Contacto">
+                    <input
+                      type="text"
+                      value={form.contactoArquitecto}
+                      onChange={e => set('contactoArquitecto', e.target.value)}
+                      style={inputStyle(false)}
+                      placeholder="Email o teléfono"
+                    />
+                  </Field>
+                </div>
+              </div>
+            )}
+
+            {/* Ubicación */}
+            <Field label="Ubicación" required error={errors.location}>
+              <LocationAutocomplete
+                value={form.location}
+                onChange={v => set('location', v)}
+                hasError={!!errors.location}
+              />
+            </Field>
+
+            {/* Fecha inicio + Duración + Fecha fin */}
+            <div style={{ display: 'grid', gridTemplateColumns: (isMobile || isTablet) ? '1fr' : '1fr 1fr 1fr', gap: 12 }}>
+              <Field label="Fecha de inicio" required error={errors.startDate}>
+                <input
+                  type="date" value={form.startDate}
+                  onChange={e => handleStartDateChange(e.target.value)}
+                  style={inputStyle(errors.startDate)}
+                />
+              </Field>
+              <Field label="Duración">
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="number" min={1} value={duracionValor}
+                    onChange={e => handleDurValChange(e.target.value)}
+                    placeholder="Ej: 8"
+                    style={{ ...inputStyle(false), flex: 1, minWidth: 0 }}
+                  />
+                  <select
+                    value={duracionUnidad}
+                    onChange={e => handleDurUndChange(e.target.value)}
+                    style={{ ...inputStyle(false), width: 'auto', minWidth: 80, padding: '10px 8px', cursor: 'pointer' }}
+                  >
+                    <option>Días</option>
+                    <option>Semanas</option>
+                    <option>Meses</option>
+                  </select>
+                </div>
+              </Field>
+              <Field label="Fecha de finalización" required error={errors.endDate}>
+                <div style={{
+                  ...inputStyle(errors.endDate),
+                  background: form.endDate ? 'white' : '#F9FAFB',
+                  color: form.endDate ? 'var(--gray-800)' : 'var(--gray-400)',
+                  display: 'flex', alignItems: 'center',
+                  cursor: 'default', userSelect: 'none',
+                }}>
+                  {form.endDate ? fmtDate(form.endDate) : 'Se calcula automático'}
+                </div>
+              </Field>
+            </div>
+
+            {/* Responsable en obra + Responsable de proyecto */}
+            <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
+              <Field label="Responsable en obra" required error={errors.responsible}>
+                <TeamSelect
+                  value={form.responsible}
+                  onChange={e => set('responsible', e.target.value)}
+                  teamMembers={teamMembers}
+                  hasError={!!errors.responsible}
+                  placeholder="Seleccionar responsable…"
+                />
+              </Field>
+              <Field label="Responsable de proyecto">
+                <TeamSelect
+                  value={form.responsableProyecto}
+                  onChange={e => set('responsableProyecto', e.target.value)}
+                  teamMembers={teamMembers}
+                  placeholder="Seleccionar responsable…"
+                />
+              </Field>
+            </div>
+
+            {/* Contratista + Proyecto */}
+            <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
+              <Field label="Contratista principal">
+                <TeamSelect
+                  value={form.contratista}
+                  onChange={e => set('contratista', e.target.value)}
+                  teamMembers={teamMembers}
+                  placeholder="Seleccionar contratista…"
+                />
+              </Field>
+              <Field label="Proyecto">
+                <input
+                  type="text" value={form.proyecto}
+                  onChange={e => set('proyecto', e.target.value)}
+                  style={inputStyle(false)}
+                  placeholder="Ej: Plan de Desarrollo Urbano 2024"
+                />
+              </Field>
+            </div>
+
+            {/* Estado */}
+            <Field label="Estado">
+              <select
+                value={form.status}
+                onChange={e => set('status', e.target.value)}
+                style={{ ...inputStyle(false), cursor: 'pointer' }}
+              >
+                <option value="activa">Activa</option>
+                <option value="terminada">Terminada</option>
+                <option value="atrasada">Atrasada</option>
+              </select>
+            </Field>
+
+            {/* Documentación */}
+            <Field label="Documentación">
+              <div style={{ position: 'relative' }}>
+                <input
+                  type="url"
+                  value={form.linkDocumentacion}
+                  onChange={e => set('linkDocumentacion', e.target.value)}
+                  style={{ ...inputStyle(false), paddingRight: 40 }}
+                  placeholder="https://drive.google.com/…"
+                />
+                {form.linkDocumentacion && (
+                  <a
+                    href={form.linkDocumentacion}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Abrir carpeta"
+                    style={{
+                      position: 'absolute', right: 10, top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: 'var(--orange)', fontSize: 16, lineHeight: 1,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    ↗
+                  </a>
+                )}
               </div>
             </Field>
-          </div>
 
-          {/* Responsable en obra + Responsable de proyecto */}
-          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
-            <Field label="Responsable en obra" required error={errors.responsible}>
-              <TeamSelect
-                value={form.responsible}
-                onChange={e => set('responsible', e.target.value)}
-                teamMembers={teamMembers}
-                hasError={!!errors.responsible}
-                placeholder="Seleccionar responsable…"
-              />
-            </Field>
-            <Field label="Responsable de proyecto">
-              <TeamSelect
-                value={form.responsableProyecto}
-                onChange={e => set('responsableProyecto', e.target.value)}
-                teamMembers={teamMembers}
-                placeholder="Seleccionar responsable…"
-              />
-            </Field>
-          </div>
-
-          {/* Contratista + Proyecto */}
-          <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
-            <Field label="Contratista principal">
-              <TeamSelect
-                value={form.contratista}
-                onChange={e => set('contratista', e.target.value)}
-                teamMembers={teamMembers}
-                placeholder="Seleccionar contratista…"
-              />
-            </Field>
-            <Field label="Proyecto">
-              <input
-                type="text" value={form.proyecto}
-                onChange={e => set('proyecto', e.target.value)}
-                style={inputStyle(false)}
-                placeholder="Ej: Plan de Desarrollo Urbano 2024"
-              />
-            </Field>
-          </div>
-
-          {/* Estado */}
-          <Field label="Estado">
-            <select
-              value={form.status}
-              onChange={e => set('status', e.target.value)}
-              style={{ ...inputStyle(false), cursor: 'pointer' }}
-            >
-              <option value="activa">Activa</option>
-              <option value="terminada">Terminada</option>
-              <option value="atrasada">Atrasada</option>
-            </select>
-          </Field>
-
-          {/* Botones */}
-          <div style={{
-            display: 'flex', gap: 10,
-            justifyContent: 'flex-end',
-            paddingTop: 16, borderTop: '1px solid var(--gray-200)', marginTop: 8,
-            flexDirection: isMobile ? 'column-reverse' : 'row',
-          }}>
-            <button
-              type="button" onClick={onClose}
-              style={{
-                padding: '11px 24px', borderRadius: 8,
-                border: '1px solid var(--gray-200)', background: 'white',
-                color: 'var(--gray-700)', cursor: 'pointer',
-                fontWeight: 600, fontSize: 14, fontFamily: 'inherit',
-              }}
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              style={{
-                padding: '11px 28px', borderRadius: 8, border: 'none',
-                background: 'var(--orange)', color: 'white', cursor: 'pointer',
-                fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
-                boxShadow: '0 2px 8px rgba(249,115,22,0.4)',
-              }}
-            >
-              {project ? 'Guardar cambios' : 'Crear obra'}
-            </button>
-          </div>
-        </form>
+            {/* Botones */}
+            <div style={{
+              display: 'flex', gap: 10,
+              justifyContent: 'flex-end',
+              paddingTop: 16, borderTop: '1px solid var(--gray-200)', marginTop: 8,
+              flexDirection: isMobile ? 'column-reverse' : 'row',
+            }}>
+              <button
+                type="button"
+                onClick={() => project ? setMode('info') : onClose()}
+                style={{
+                  padding: '11px 24px', borderRadius: 8,
+                  border: '1px solid var(--gray-200)', background: 'white',
+                  color: 'var(--gray-700)', cursor: 'pointer',
+                  fontWeight: 600, fontSize: 14, fontFamily: 'inherit',
+                }}
+              >
+                {project ? 'Volver' : 'Cancelar'}
+              </button>
+              <button
+                type="submit"
+                style={{
+                  padding: '11px 28px', borderRadius: 8, border: 'none',
+                  background: 'var(--orange)', color: 'white', cursor: 'pointer',
+                  fontWeight: 700, fontSize: 14, fontFamily: 'inherit',
+                  boxShadow: '0 2px 8px rgba(249,115,22,0.4)',
+                }}
+              >
+                {project ? 'Guardar cambios' : 'Crear obra'}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )

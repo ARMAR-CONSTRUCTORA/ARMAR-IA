@@ -1,91 +1,142 @@
-# ARMAR-IA — Contexto del proyecto para Claude
+# ARMAR-IA — Contexto del proyecto
 
-## Stack tecnológico
-
-- **React 18.3.1** — componentes funcionales, hooks (`useState`, `useEffect`)
-- **Vite 5.4.0** — build tool y dev server (`@vitejs/plugin-react`)
-- **Sin librerías de UI externas** — todo el estilo es CSS-in-JS inline
-- **Sin router** — navegación client-side via estado `activePage` en `App.jsx`
-- **Persistencia** — `localStorage` bajo la clave `armar-ia-projects`
+## Stack
+- React JSX + Vite, CSS inline styles, Supabase, Vercel
+- Sin Tailwind, sin librerías de UI. Todo el estilo es inline.
+- Fuente: Outfit / Segoe UI
+- Sin router — navegación client-side via estado `activePage` en `App.jsx`
 
 ## Estructura de carpetas
-
 ```
 ARMAR-IA/
-├── index.html
-├── vite.config.js
-├── package.json
 ├── src/
-│   ├── main.jsx              # Punto de entrada React
-│   ├── App.jsx               # Componente raíz — estado global, layout, routing
-│   ├── index.css             # Variables CSS globales (colores, tipografía)
+│   ├── App.jsx                     # Rutas y estado global
+│   ├── index.css                   # Variables CSS globales
 │   ├── components/
-│   │   ├── Sidebar.jsx       # Navegación lateral (fija en desktop, drawer en mobile)
-│   │   ├── TopBar.jsx        # Barra superior (solo mobile/tablet)
-│   │   ├── Navbar.jsx        # (componente de navegación auxiliar)
-│   │   ├── Dashboard.jsx     # Página de inicio con resumen de obras
-│   │   ├── ProjectList.jsx   # Página "Obras" — listado + CRUD
-│   │   ├── ProjectModal.jsx  # Modal para agregar/editar obras
-│   │   ├── CronogramasPage.jsx  # Página "Cronogramas" — Gantt por obra
-│   │   ├── EquipoPage.jsx    # Página "Equipo" — personas asignadas por obra
-│   │   ├── DocumentosPage.jsx   # Página "Documentos" — archivos por obra
-│   │   ├── ConfigPage.jsx    # Página "Configuración"
-│   │   └── LocationAutocomplete.jsx  # Input con autocompletado de ubicación
+│   │   ├── Sidebar.jsx             # Menú colapsable
+│   │   ├── TopBar.jsx              # Barra superior mobile
+│   │   ├── Dashboard.jsx
+│   │   ├── ProjectList.jsx         # Lista de obras
+│   │   ├── ProjectModal.jsx
+│   │   ├── CronogramasPage.jsx     # Cronograma general
+│   │   ├── CronogramaTab.jsx       # Gantt + certificados + informes + stats
+│   │   ├── ModalCrearCronograma.jsx  # Wizard 3 pasos
+│   │   ├── ModalEditarEtapa.jsx    # Edición de etapas
+│   │   ├── EquipoPage.jsx          # OBRA/PROYECTO/GREMIOS/ADMINISTRACIÓN
+│   │   ├── DocumentosPage.jsx
+│   │   └── ConfigPage.jsx
 │   ├── data/
-│   │   └── sampleData.js     # Datos de ejemplo como fallback inicial
-│   └── hooks/
-│       └── useBreakpoint.js  # Hook responsive: { isDesktop, isMobile }
-└── dist/                     # Output del build
+│   │   └── cronogramaTemplates.js  # Plantillas predefinidas
+│   ├── lib/
+│   │   └── supabase.js             # Cliente Supabase + mappers DB
+│   └── utils/
+│       └── templateStorage.js      # Guarda plantillas en localStorage
 ```
 
-## Páginas / secciones
-
-| Clave          | Título        | Componente           |
-|----------------|---------------|----------------------|
-| `dashboard`    | Dashboard     | `Dashboard.jsx`      |
-| `obras`        | Obras         | `ProjectList.jsx`    |
-| `cronogramas`  | Cronogramas   | `CronogramasPage.jsx`|
-| `equipo`       | Equipo        | `EquipoPage.jsx`     |
-| `documentos`   | Documentos    | `DocumentosPage.jsx` |
-| `configuracion`| Configuración | `ConfigPage.jsx`     |
-
-## Colores principales
-
-```css
-/* Acento principal */
---orange: #F97316;
-
-/* Escala de grises */
---gray-100: /* fondo general */
---gray-300: /* bordes suaves */
---gray-500: /* texto secundario */
---gray-700: /* texto medio */
---gray-800: /* texto principal */
-
-/* Estado de error / peligro */
---red: /* botones destructivos */
+## Colores — siempre usar estas constantes locales en cada componente
+```js
+const orange = "#E8641A"
+const orangeLight = "#FFF3EB"
+const orangeMid = "#F28C4E"
+const dark = "#1A1A1A"
+const mid = "#444"
+const light = "#F7F7F5"
+const border = "#E0DDD8"
+const green = "#2D7A4F"
+const greenLight = "#EBF7F1"
+const red = "#C0392B"
+const redLight = "#FDECEA"
+const blue = "#2563EB"
+const blueLight = "#EFF6FF"
 ```
+El naranja principal también está disponible como `var(--orange)` en index.css.
 
-Los colores se definen en `src/index.css` como variables CSS y se usan inline vía `var(--nombre)`.
+## Supabase — tablas
+- `projects` — obras
+- `cronogramas` — columnas JSONB: `tareas`, `informes`, `certificados`
+- `team_members`
+- `usuarios`
+- **Pendiente crear:** tabla `presupuestos` con JSONB para capítulos e ítems
 
 ## Idioma
-
-Toda la UI está en **español (Argentina)**. Mantener ese idioma en textos, labels, mensajes de error y confirmaciones.
+Toda la UI en español (Argentina).
 
 ## Responsive
+Hook `useBreakpoint` → `{ isDesktop, isMobile }`. Sidebar fija 240px en desktop.
 
-El layout usa tres breakpoints gestionados por `useBreakpoint`:
-- **Mobile** (`isMobile: true`) — padding reducido, bottom sheets, drawer de navegación
-- **Tablet** — valores intermedios
-- **Desktop** (`isDesktop: true`) — sidebar fija de 240px, modales centrados, padding amplio
+---
 
-## Persistencia actual
+## Lógica de negocio — flujo real del proyecto
+```
+Presupuesto → aprobado por cliente → Cronograma base → Cronocash inicial
+→ Obra → Certificados de avance → Certificados de pago
+```
 
-Los datos de obras se guardan en `localStorage['armar-ia-projects']` como JSON. El estado se inicializa desde ahí o desde `sampleData.js` como fallback. No hay backend ni base de datos conectada todavía.
+---
 
-## Mejoras pendientes
+## Cambios ya implementados
 
-- [ ] **Zoom en Gantt** — controles para escalar la vista de cronograma (semanas / meses / trimestres)
-- [ ] **Formulario de obras ampliado** — nuevos campos en `ProjectModal` (presupuesto, comitente, tipo de obra, etc.)
-- [ ] **Integración con Supabase para documentos** — subir y listar archivos reales en `DocumentosPage`, reemplazando el estado local
-- [ ] **Logo real de ARMAR** — reemplazar el placeholder/texto en `Sidebar` y `TopBar` con el logo SVG/PNG oficial
+### CronogramaTab
+- `handleDeleteTarea` limpia dependencias huérfanas al eliminar padre e hijos
+- Columna `COL_INCIDENCIA = 72` muestra `pesoRelativo %` por etapa
+- Fila total al pie: verde si suma 100%, naranja si menor, rojo si supera
+
+### ModalEditarEtapa
+- Botón 🗑 Eliminar en footer con `ModalConfirmarEliminar` (`zIndex 400`)
+- Prop `onDelete` — al eliminar etapa padre también elimina hijos y limpia `dependeDeId` huérfanos
+
+### ModalCrearCronograma
+- Botón "🗑 Gestionar" en paso 1 activa modo gestión con × para eliminar plantillas
+- `ModalConfirmarEliminarPlantilla` con `zIndex 500`
+- `templates` es estado mutable, llama `saveTemplates` al eliminar
+
+### cronogramaTemplates.js
+- Eliminado parámetro `esCritica` del helper `e()`, todas las etapas tienen `esCritica: false`
+
+---
+
+## Módulo Presupuestos — lógica definida, pendiente crear PresupuestosTab.jsx
+
+**Tres tipos de presupuesto:**
+1. **Presupuesto Cliente** — formal con markup, honorarios, GG
+2. **Presupuesto Interno** — costo real acordado con cada gremio, para calcular margen
+3. **Contrataciones del Cliente** — cliente contrata directo, estudio cobra % honorarios de gestión; no está en el presupuesto formal pero sí en el cronograma
+
+**Estructura:**
+- Capítulos = etapas del cronograma (mismos títulos)
+- Ítems por capítulo: descripción, unidad, cantidad, precio unitario cliente, precio unitario interno, moneda (ARS o USD)
+- `const USD_RATE = 1250` — cotización de referencia
+- Gastos Generales y Honorarios: fijos o como % del total
+- Estado del presupuesto: Borrador / Enviado al cliente / Aprobado
+
+**Vista triple (selector en header):**
+- 👤 Cliente — solo precios cliente
+- 🔒 Interno — solo costos reales
+- ⚖️ Comparar — ambas columnas + margen %
+
+**Cards superiores:** total cliente | costo interno | margen % | honorarios de gestión
+
+**Tabs internos:** Capítulos de obra / Contrataciones cliente / Resumen final
+
+**Resumen final:** tabla por capítulo con margen e incidencia (barra visual), total general en dark box
+
+---
+
+## Módulo Cronocash — definido, pendiente implementar
+- Proyección que cruza presupuesto aprobado × cronograma base
+- El cliente ve cuándo desembolsar en cada etapa
+- Si el cronograma se mueve → cronocash se recalcula automáticamente
+- Certificados de avance → generan certificados de pago reales para comparar con lo proyectado
+
+## Certificados — relación con presupuesto
+- Certificado de avance (% ejecutado de etapa) × monto de etapa en presupuesto = monto a cobrar al cliente
+
+---
+
+## Pendientes (en orden sugerido)
+1. Crear `PresupuestosTab.jsx` con la lógica definida arriba
+2. Conectar `PresupuestosTab` a Supabase (tabla `presupuestos` JSONB)
+3. Vincular capítulos del presupuesto con etapas del cronograma
+4. Exportar PDF vista cliente (sin precios internos ni margen)
+5. Cronocash — nueva pestaña cruzando presupuesto × cronograma
+6. Certificados de pago derivados de certificados de avance × monto de etapa

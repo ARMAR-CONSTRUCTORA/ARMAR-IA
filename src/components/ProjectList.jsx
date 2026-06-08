@@ -168,11 +168,11 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
                 onClick={(e) => { e.stopPropagation(); onEdit(p) }}
                 style={{
                   padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 600,
-                  border: '1px solid var(--gray-200)', background: 'white',
-                  color: 'var(--gray-700)', cursor: 'pointer', fontFamily: 'inherit',
+                  border: '1px solid var(--orange)', background: 'white',
+                  color: 'var(--orange)', cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
-                ✏️ Editar
+                ℹ️ Información
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); onDelete(p.id) }}

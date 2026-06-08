@@ -10,5 +10,18 @@
       "Bash(git commit -m ' *)",
       "Bash(git push *)"
     ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo '{\"systemMessage\": \"✅ Si la tarea quedó OK en local → git add . && git commit -m \\\"descripcion\\\" && git push para deployar a Vercel\"}'",
+            "shell": "bash"
+          }
+        ]
+      }
+    ]
   }
 }
