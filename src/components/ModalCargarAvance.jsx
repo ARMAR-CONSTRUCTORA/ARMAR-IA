@@ -9,6 +9,9 @@ function fmtDate(d) {
 function progressColor(v) {
   return v === 100 ? '#10B981' : v >= 70 ? '#F97316' : v >= 40 ? '#F59E0B' : '#9CA3AF'
 }
+function fmtMonto(v) {
+  return '$' + Math.round(v).toLocaleString('es-AR')
+}
 function today() {
   return new Date().toISOString().split('T')[0]
 }
@@ -257,18 +260,29 @@ export default function ModalCargarAvance({ project, cronograma, numero, teamMem
                       <div style={{ padding: '10px 12px' }}>
                         <MiniBar value={etapa.avanceActual} />
                       </div>
-                      <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center' }}>
-                        {!hasHijos ? (
-                          <input type="number" min={0} max={100 - etapa.avanceActual}
-                            value={inputValues[etapa.id] || ''}
-                            onChange={e => setInput(etapa.id, e.target.value)}
-                            placeholder="0"
-                            style={{ width: 52, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', textAlign: 'center' }}
-                          />
-                        ) : (
-                          <span style={{ fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>auto</span>
-                        )}
-                      </div>
+                      {(() => {
+                        const deltaEtapa = hasHijos
+                          ? getAvanceEtapaConInputs(etapa.id) - etapa.avanceActual
+                          : (Number(inputValues[etapa.id]) || 0)
+                        const montoAvance = etapa.presupuesto > 0 ? Math.round((deltaEtapa / 100) * etapa.presupuesto) : 0
+                        return (
+                          <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', gap: 4 }}>
+                            {!hasHijos ? (
+                              <input type="number" min={0} max={100 - etapa.avanceActual}
+                                value={inputValues[etapa.id] || ''}
+                                onChange={e => setInput(etapa.id, e.target.value)}
+                                placeholder="0"
+                                style={{ width: 52, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', textAlign: 'center' }}
+                              />
+                            ) : (
+                              <span style={{ fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>auto</span>
+                            )}
+                            {montoAvance > 0 && (
+                              <span style={{ fontSize: 11, color: '#2D7A4F', fontWeight: 600 }}>≈ {fmtMonto(montoAvance)} por este avance</span>
+                            )}
+                          </div>
+                        )
+                      })()}
                       <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center' }}>
                         <span style={{ fontSize: 13, fontWeight: 800, color: progressColor(avEtapa) }}>{avEtapa}%</span>
                       </div>
