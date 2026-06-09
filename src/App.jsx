@@ -373,6 +373,7 @@ function App() {
             cronogramas={cronogramas}
             teamMembers={teamMembers}
             proyectosArmar={proyectosArmar}
+            presupuestos={presupuestos}
             onAdd={openAdd}
             onEdit={openEdit}
             onDelete={setDeleteTarget}
