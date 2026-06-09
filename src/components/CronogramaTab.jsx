@@ -67,6 +67,55 @@ function calcPagadoAcumulado(tareaId, certificados) {
   }, 0)
 }
 
+const orange = "#E8641A", orangeLight = "#FFF3EB"
+const dark = "#1A1A1A", mid = "#444", light = "#F7F7F5", border = "#E0DDD8"
+const green = "#2D7A4F", greenLight = "#EBF7F1"
+const red = "#C0392B", redLight = "#FDECEA"
+const blue = "#2563EB", blueLight = "#EFF6FF"
+
+const ESTADO_CERT_META = {
+  borrador:         { label: 'Borrador',         color: '#6B7280', bg: '#F3F4F6',  bd: '#D1D5DB' },
+  emitido:          { label: 'Emitido',          color: blue,      bg: blueLight,  bd: '#BFDBFE' },
+  aprobado_cliente: { label: 'Aprobado cliente', color: green,     bg: greenLight, bd: '#A7D7BC' },
+  observado:        { label: 'Observado',        color: orange,    bg: orangeLight, bd: '#F3C19B' },
+  facturado:        { label: 'Facturado',        color: blue,      bg: blueLight,  bd: '#BFDBFE' },
+  pagado_parcial:   { label: 'Pagado parcial',   color: '#B45309', bg: '#FEF3C7',  bd: '#FDE68A' },
+  pagado_total:     { label: 'Pagado total',     color: green,     bg: greenLight, bd: '#A7D7BC' },
+  anulado:          { label: 'Anulado',          color: red,       bg: redLight,  bd: '#F5C6C0' },
+}
+
+const ESTADOS_CERT_OPCIONES = Object.entries(ESTADO_CERT_META).map(([value, meta]) => ({ value, label: meta.label }))
+
+function normalizarCertificado(cert) {
+  if (!cert) return cert
+  const montoCertificado = cert.montoCertificado ?? cert.totalCertificado ?? cert.total ?? 0
+  const montoPagado = cert.montoPagado ?? 0
+  const saldoPendiente = cert.saldoPendiente != null ? cert.saldoPendiente : (montoCertificado - montoPagado)
+  let estado = cert.estado
+  if (!estado || !ESTADO_CERT_META[estado]) {
+    estado = estado === 'pagado' ? 'pagado_total' : 'emitido'
+  }
+  return { ...cert, fechaEmision: cert.fechaEmision ?? cert.fecha, montoCertificado, montoPagado, saldoPendiente, estado }
+}
+
+function EstadoCertBadge({ estado }) {
+  const meta = ESTADO_CERT_META[estado] || ESTADO_CERT_META.emitido
+  return (
+    <span style={{ fontSize: 10, fontWeight: 800, color: meta.color, background: meta.bg, border: `1px solid ${meta.bd}`, borderRadius: 99, padding: '2px 9px', textTransform: 'uppercase', letterSpacing: '0.03em', textDecoration: estado === 'anulado' ? 'line-through' : 'none', whiteSpace: 'nowrap', display: 'inline-block' }}>
+      {meta.label}
+    </span>
+  )
+}
+
+function SummaryField({ label, value, color }) {
+  return (
+    <div style={{ background: 'white', border: '1px solid #DBEAFE', borderRadius: 7, padding: '6px 10px' }}>
+      <div style={{ fontSize: 9, fontWeight: 700, color: '#3B82F6', textTransform: 'uppercase', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: color || 'var(--gray-800)' }}>{value}</div>
+    </div>
+  )
+}
+
 function DonutChart({ value, size = 110 }) {
   const r = 36, c = 2 * Math.PI * r
   const filled = (value / 100) * c
@@ -545,9 +594,17 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, editCert,
       totalEtapa:  calcTotalEtapa(tareas.find(t => t.id === id)),
     }))
     if (editCert) {
-      onGuardar({ ...editCert, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert, editadoEn: Date.now() })
+      const montoPagado = editCert.montoPagado ?? 0
+      onGuardar({
+        ...editCert, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert,
+        montoCertificado: totalCertificado, montoPagado, saldoPendiente: totalCertificado - montoPagado,
+        editadoEn: Date.now(),
+      })
     } else {
-      onGuardar({ id: `cert-${Date.now()}`, numero, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert })
+      onGuardar({
+        id: `cert-${Date.now()}`, numero, fecha, responsable, observaciones, totalCertificado, etapas: etapasCert,
+        montoCertificado: totalCertificado, montoPagado: 0, saldoPendiente: totalCertificado, estado: 'emitido',
+      })
     }
     onClose()
   }
@@ -657,41 +714,56 @@ function ModalCertificado({ tareas, certificados, numero, teamMembers, editCert,
   )
 }
 
-function HistorialCertificados({ certificados, isEditor, onEditar, onEliminarCertificado }) {
+function HistorialCertificados({ certificados, isEditor, onEditar, onGestionarPago, onEliminarCertificado }) {
   const [expandedIds,    setExpandedIds]    = useState(new Set())
   const [confirmDeleteId, setConfirmDeleteId] = useState(null)
   if (!certificados || !certificados.length) return null
   const toggle = (id) => setExpandedIds(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const today = new Date().toISOString().slice(0, 10)
+  const certsNorm = certificados.map(normalizarCertificado)
   return (
     <div style={{ marginTop: 24 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
         <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--gray-800)' }}>Certificados de pago</span>
-        <span style={{ fontSize: 12, fontWeight: 700, background: '#EFF6FF', padding: '2px 10px', borderRadius: 99, color: '#3B82F6' }}>{certificados.length}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, background: blueLight, padding: '2px 10px', borderRadius: 99, color: blue }}>{certsNorm.length}</span>
       </div>
-      {[...certificados].reverse().map((cert, revIdx) => {
+      {[...certsNorm].reverse().map((cert, revIdx) => {
         const isExpanded = expandedIds.has(cert.id)
-        const num = cert.numero ?? (certificados.length - revIdx)
+        const num = cert.numero ?? (certsNorm.length - revIdx)
+        const vencido = !!(cert.fechaVencimiento && cert.fechaVencimiento < today && cert.saldoPendiente > 0)
         return (
           <div key={cert.id} style={{ border: '1px solid #BFDBFE', borderRadius: 10, marginBottom: 8, overflow: 'hidden', background: 'white' }}>
-            <div onClick={() => toggle(cert.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
+            <div onClick={() => toggle(cert.id)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', flexWrap: 'wrap' }}
               onMouseEnter={e => e.currentTarget.style.background = '#F0F9FF'}
               onMouseLeave={e => e.currentTarget.style.background = 'white'}>
               <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#3B82F6', color: 'white', fontSize: 12, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>#{num}</div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--gray-800)' }}>Certificado #{num}</div>
-                <div style={{ fontSize: 11, color: 'var(--gray-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{fmtLong(cert.fecha)} · {cert.responsable}</div>
+              <div style={{ flex: 1, minWidth: 140 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--gray-800)' }}>Certificado #{num}</span>
+                  <EstadoCertBadge estado={cert.estado} />
+                  {vencido && <span style={{ fontSize: 10, fontWeight: 800, color: red, background: redLight, border: `1px solid ${red}`, borderRadius: 99, padding: '2px 9px', textTransform: 'uppercase' }}>Vencido</span>}
+                  {cert.editadoEn && <span style={{ fontSize: 9, fontWeight: 700, color: orange, background: orangeLight, border: '1px solid #F28C4E', borderRadius: 4, padding: '1px 5px' }}>editado</span>}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--gray-500)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: 2 }}>
+                  {fmtLong(cert.fechaEmision)}{cert.fechaVencimiento ? ` · vence ${fmtLong(cert.fechaVencimiento)}` : ''} · {cert.responsable}
+                </div>
               </div>
               <div style={{ textAlign: 'right', marginRight: 8, flexShrink: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
-                  <div style={{ fontSize: 15, fontWeight: 900, color: '#1D4ED8' }}>{fmtPesos(cert.totalCertificado)}</div>
-                  {cert.editadoEn && <span style={{ fontSize: 9, fontWeight: 700, color: '#E8641A', background: '#FFF3EB', border: '1px solid #F28C4E', borderRadius: 4, padding: '1px 5px' }}>editado</span>}
+                <div style={{ fontSize: 15, fontWeight: 900, color: '#1D4ED8' }}>{fmtPesos(cert.montoCertificado)}</div>
+                <div style={{ fontSize: 10, color: cert.saldoPendiente > 0 ? orange : green, fontWeight: 700 }}>
+                  {cert.saldoPendiente > 0 ? `Saldo: ${fmtPesos(cert.saldoPendiente)}` : 'Pagado'}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--gray-400)' }}>{(cert.etapas || []).length} etapa{(cert.etapas || []).length !== 1 ? 's' : ''}</div>
               </div>
               {isEditor && onEditar && (
                 <button onClick={e => { e.stopPropagation(); onEditar(cert) }}
-                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #E0DDD8', background: 'white', color: '#E8641A', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #E0DDD8', background: 'white', color: orange, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                   ✏ Editar
+                </button>
+              )}
+              {isEditor && onGestionarPago && (
+                <button onClick={e => { e.stopPropagation(); onGestionarPago(cert) }}
+                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #BFDBFE', background: blueLight, color: blue, fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                  💳 Gestión de pago
                 </button>
               )}
               {isEditor && onEliminarCertificado && (
@@ -704,14 +776,27 @@ function HistorialCertificados({ certificados, isEditor, onEditar, onEliminarCer
             </div>
             {isExpanded && (
               <div style={{ borderTop: '1px solid #DBEAFE', padding: '14px 16px', background: '#F0F9FF' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 12 }}>
+                  <SummaryField label="Monto certificado" value={fmtPesos(cert.montoCertificado)} />
+                  <SummaryField label="Monto pagado" value={fmtPesos(cert.montoPagado)} color={green} />
+                  <SummaryField label="Saldo pendiente" value={fmtPesos(cert.saldoPendiente)} color={cert.saldoPendiente > 0 ? orange : green} />
+                  {(cert.periodoDesde || cert.periodoHasta) && <SummaryField label="Período" value={`${fmtShort(cert.periodoDesde)} – ${fmtShort(cert.periodoHasta)}`} />}
+                  {cert.fechaPago && <SummaryField label="Fecha de pago" value={fmtLong(cert.fechaPago)} />}
+                  {cert.medioPago && <SummaryField label="Medio de pago" value={cert.medioPago} />}
+                </div>
+                {cert.linkRespaldo && (
+                  <div style={{ marginBottom: 12 }}>
+                    <a href={cert.linkRespaldo} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: blue, fontWeight: 700, textDecoration: 'none' }}>🔗 Ver respaldo / factura</a>
+                  </div>
+                )}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: cert.observaciones ? 14 : 0 }}>
                   {(cert.etapas || []).map(e => {
                     let avBefore = null
                     if (e.avanceCargado != null) {
-                      const certIdx = certificados.findIndex(c => c.id === cert.id)
+                      const certIdx = certsNorm.findIndex(c => c.id === cert.id)
                       avBefore = 0
                       for (let j = 0; j < certIdx; j++) {
-                        const prevE = (certificados[j].etapas || []).find(pe => pe.tareaId === e.tareaId)
+                        const prevE = (certsNorm[j].etapas || []).find(pe => pe.tareaId === e.tareaId)
                         if (prevE?.avanceCargado != null) avBefore = Math.min(100, avBefore + prevE.avanceCargado)
                       }
                     }
@@ -760,6 +845,140 @@ function HistorialCertificados({ certificados, isEditor, onEditar, onEliminarCer
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function ModalGestionCertificado({ cert, onClose, onGuardar }) {
+  const [fechaVencimiento, setFechaVencimiento] = useState(cert.fechaVencimiento || '')
+  const [periodoDesde,     setPeriodoDesde]     = useState(cert.periodoDesde || '')
+  const [periodoHasta,     setPeriodoHasta]     = useState(cert.periodoHasta || '')
+  const [montoPagadoStr,   setMontoPagadoStr]   = useState(cert.montoPagado ? Number(cert.montoPagado).toLocaleString('es-AR') : '')
+  const [estado,           setEstado]           = useState(cert.estado || 'emitido')
+  const [fechaPago,        setFechaPago]        = useState(cert.fechaPago || '')
+  const [medioPago,        setMedioPago]        = useState(cert.medioPago || '')
+  const [observaciones,    setObservaciones]    = useState(cert.observaciones || '')
+  const [linkRespaldo,     setLinkRespaldo]     = useState(cert.linkRespaldo || '')
+
+  const montoPagadoNum = parseMiles(montoPagadoStr)
+  const saldoPendiente = (cert.montoCertificado || 0) - montoPagadoNum
+
+  const setMonto = (raw) => {
+    const num = raw.replace(/\D/g, '')
+    setMontoPagadoStr(num ? Number(num).toLocaleString('es-AR') : '')
+  }
+
+  let sugerencia = null
+  if (montoPagadoNum > 0 && saldoPendiente <= 0 && estado !== 'pagado_total') sugerencia = { value: 'pagado_total', label: 'Pagado total' }
+  else if (montoPagadoNum > 0 && saldoPendiente > 0 && !['pagado_parcial', 'observado', 'anulado'].includes(estado)) sugerencia = { value: 'pagado_parcial', label: 'Pagado parcial' }
+
+  const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: 7, border: '1px solid var(--gray-200)', fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }
+  const labelStyle = { display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 5 }
+
+  const handleGuardar = () => {
+    onGuardar({
+      ...cert,
+      fechaVencimiento: fechaVencimiento || null,
+      periodoDesde: periodoDesde || null,
+      periodoHasta: periodoHasta || null,
+      montoPagado: montoPagadoNum,
+      saldoPendiente,
+      estado,
+      fechaPago: fechaPago || null,
+      medioPago,
+      observaciones,
+      linkRespaldo,
+      editadoEn: Date.now(),
+    })
+    onClose()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 16, backdropFilter: 'blur(2px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'white', borderRadius: 18, width: '100%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.25)' }}>
+        <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <h2 style={{ fontSize: 17, fontWeight: 900, color: 'var(--gray-900)', marginBottom: 2 }}>Gestión de pago — Certificado #{cert.numero}</h2>
+            <p style={{ fontSize: 12, color: 'var(--gray-500)' }}>Estado, vencimientos y pagos del certificado</p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--gray-400)', padding: '4px 8px' }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
+            <SummaryField label="Monto certificado" value={fmtPesos(cert.montoCertificado)} />
+            <SummaryField label="Monto pagado" value={fmtPesos(montoPagadoNum)} color={green} />
+            <SummaryField label="Saldo pendiente" value={fmtPesos(saldoPendiente)} color={saldoPendiente > 0 ? orange : green} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>Fecha de vencimiento</label>
+              <input type="date" value={fechaVencimiento} onChange={e => setFechaVencimiento(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Estado</label>
+              <select value={estado} onChange={e => setEstado(e.target.value)} style={inputStyle}>
+                {ESTADOS_CERT_OPCIONES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>Período desde</label>
+              <input type="date" value={periodoDesde} onChange={e => setPeriodoDesde(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Período hasta</label>
+              <input type="date" value={periodoHasta} onChange={e => setPeriodoHasta(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Monto pagado</label>
+              <div style={{ position: 'relative' }}>
+                <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+                <input type="text" inputMode="numeric" style={{ ...inputStyle, paddingLeft: 24 }} placeholder="0" value={montoPagadoStr} onChange={e => setMonto(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <label style={labelStyle}>Fecha de pago</label>
+              <input type="date" value={fechaPago} onChange={e => setFechaPago(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Medio de pago</label>
+              <input type="text" value={medioPago} onChange={e => setMedioPago(e.target.value)} placeholder="Transferencia, cheque…" style={inputStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Link de respaldo</label>
+              <input type="text" value={linkRespaldo} onChange={e => setLinkRespaldo(e.target.value)} placeholder="URL de factura o comprobante" style={inputStyle} />
+            </div>
+          </div>
+
+          {sugerencia && (
+            <div style={{ background: blueLight, border: `1px solid ${blue}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: blue, fontWeight: 600 }}>Según el saldo, el estado sugerido es <strong>{sugerencia.label}</strong>.</span>
+              <button onClick={() => setEstado(sugerencia.value)}
+                style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: blue, color: 'white', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                Aplicar sugerencia
+              </button>
+            </div>
+          )}
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 5 }}>
+              <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Observaciones</label>
+              <span style={{ fontSize: 11, color: observaciones.length > 450 ? red : 'var(--gray-400)' }}>{observaciones.length}/500</span>
+            </div>
+            <textarea value={observaciones} onChange={e => setObservaciones(e.target.value.slice(0, 500))} rows={3}
+              placeholder="Notas sobre el pago, condiciones, referencias…"
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--gray-200)', fontSize: 13, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box', color: 'var(--gray-700)' }} />
+          </div>
+        </div>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>Cancelar</button>
+          <button onClick={handleGuardar}
+            style={{ padding: '10px 24px', borderRadius: 8, border: 'none', background: blue, color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(37,99,235,0.4)' }}>
+            Guardar cambios
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -1170,6 +1389,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const [editingTarea,    setEditingTarea]     = useState(null)
   const [editingInforme,  setEditingInforme]   = useState(null)
   const [editingCert,     setEditingCert]      = useState(null)
+  const [gestionandoCert, setGestionandoCert]  = useState(null)
   const [showDeleteModal, setShowDeleteModal]  = useState(false)
   const [cascadeData,     setCascadeData]      = useState(null)
   const [zoomIdx,         setZoomIdx]          = useState(1)
@@ -1450,13 +1670,14 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       </div>
 
       <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} onEliminarInforme={isEditor ? handleEliminarInforme : null} isEditor={isEditor} />
-      <HistorialCertificados certificados={certificados} isEditor={isEditor} onEditar={isEditor ? setEditingCert : null} onEliminarCertificado={isEditor ? handleEliminarCertificado : null} />
+      <HistorialCertificados certificados={certificados} isEditor={isEditor} onEditar={isEditor ? setEditingCert : null} onGestionarPago={isEditor ? setGestionandoCert : null} onEliminarCertificado={isEditor ? handleEliminarCertificado : null} />
 
       {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={handleCreateCronogramaLocal} />}
       {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} certificados={certificados} onGuardar={(pid, informe, tareasActualizadas, certData) => handleCargarAvanceLocal(pid, cronograma.id, informe, tareasActualizadas, certData)} onClose={() => setShowAvanceModal(false)} />}
       {toast && <div style={{ position: 'fixed', bottom: 28, right: 28, background: '#1A1A1A', color: 'white', padding: '12px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 500, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>{toast}</div>}
       {showCertModal && <ModalCertificado tareas={tareas} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
       {editingCert && <ModalCertificado tareas={tareas} certificados={certificados} numero={editingCert.numero} teamMembers={teamMembers} editCert={editingCert} onClose={() => setEditingCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setEditingCert(null) }} />}
+      {gestionandoCert && <ModalGestionCertificado cert={gestionandoCert} onClose={() => setGestionandoCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setGestionandoCert(null) }} />}
       {editingTarea && (
         <ModalEditarEtapa
           tarea={editingTarea}

@@ -45,6 +45,39 @@ function fmtPeso(n) {
   return `$${Math.round(n || 0).toLocaleString('es-AR')}`
 }
 
+// ── Estado certificado ────────────────────────────────────────────────────────
+const ESTADO_CERT_META = {
+  borrador:         { label: 'Borrador',         color: '#6B7280', bg: '#F3F4F6',  bd: '#D1D5DB' },
+  emitido:          { label: 'Emitido',          color: blue,      bg: blueLight,  bd: '#BFDBFE' },
+  aprobado_cliente: { label: 'Aprobado cliente', color: green,     bg: greenLight, bd: '#A7D7BC' },
+  observado:        { label: 'Observado',        color: orange,    bg: orangeLight, bd: '#F3C19B' },
+  facturado:        { label: 'Facturado',        color: blue,      bg: blueLight,  bd: '#BFDBFE' },
+  pagado_parcial:   { label: 'Pagado parcial',   color: '#B45309', bg: '#FEF3C7',  bd: '#FDE68A' },
+  pagado_total:     { label: 'Pagado total',     color: green,     bg: greenLight, bd: '#A7D7BC' },
+  anulado:          { label: 'Anulado',          color: red,       bg: redLight,  bd: '#F5C6C0' },
+}
+
+function normalizarCertificado(cert) {
+  if (!cert) return cert
+  const montoCertificado = cert.montoCertificado ?? cert.totalCertificado ?? cert.total ?? 0
+  const montoPagado = cert.montoPagado ?? 0
+  const saldoPendiente = cert.saldoPendiente != null ? cert.saldoPendiente : (montoCertificado - montoPagado)
+  let estado = cert.estado
+  if (!estado || !ESTADO_CERT_META[estado]) {
+    estado = estado === 'pagado' ? 'pagado_total' : 'emitido'
+  }
+  return { ...cert, fechaEmision: cert.fechaEmision ?? cert.fecha, montoCertificado, montoPagado, saldoPendiente, estado }
+}
+
+function EstadoCertBadge({ estado }) {
+  const meta = ESTADO_CERT_META[estado] || ESTADO_CERT_META.emitido
+  return (
+    <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, background: meta.bg, border: `1px solid ${meta.bd}`, padding: '2px 9px', borderRadius: 99, whiteSpace: 'nowrap', textDecoration: estado === 'anulado' ? 'line-through' : 'none' }}>
+      {meta.label}
+    </span>
+  )
+}
+
 // ── Componentes base ──────────────────────────────────────────────────────────
 function ProgressBar({ value, height = 7 }) {
   const color = progressColor(value)
@@ -109,9 +142,9 @@ function TabResumen({ p, cronograma, proyectosArmar, isDesktop, obraHitos }) {
   // Stats de cronograma
   const allInformes = cronograma.flatMap(c => c.informes || [])
   const lastInforme = allInformes.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))[0]
-  const allCerts    = cronograma.flatMap(c => c.certificados || [])
-  const totalCert   = allCerts.reduce((s, c) => s + (c.totalCertificado || 0), 0)
-  const certPend    = allCerts.filter(c => c.estado === 'pendiente' || !c.estado).length
+  const allCerts    = cronograma.flatMap(c => c.certificados || []).map(normalizarCertificado)
+  const totalCert   = allCerts.reduce((s, c) => s + (c.montoCertificado || 0), 0)
+  const certPend    = allCerts.filter(c => c.saldoPendiente > 0 && c.estado !== 'anulado').length
 
   const ultimoCron = cronograma.at(-1)
 
@@ -296,23 +329,17 @@ function TabAvances({ cronograma }) {
 }
 
 // ── Pestaña: Certificados ─────────────────────────────────────────────────────
-function TabCertificados({ p, cronograma, onSaveCronograma }) {
+function TabCertificados({ p, cronograma }) {
+  const today = new Date().toISOString().slice(0, 10)
   const allCerts = cronograma.flatMap(c =>
-    (c.certificados || []).map(cert => ({ ...cert, cronId: c.id, cronNombre: c.nombre || c.id }))
+    (c.certificados || []).map(cert => normalizarCertificado({ ...cert, cronId: c.id, cronNombre: c.nombre || c.id }))
   ).sort((a, b) => (a.numero || 0) - (b.numero || 0))
 
-  const totalCertificado = allCerts.reduce((s, c) => s + (c.totalCertificado || 0), 0)
-  const totalPagado      = allCerts.filter(c => c.estado === 'pagado').reduce((s, c) => s + (c.totalCertificado || 0), 0)
-  const saldoPendiente   = totalCertificado - totalPagado
-
-  const handleToggle = (cronId, certId, estadoActual) => {
-    const cron = cronograma.find(c => c.id === cronId)
-    if (!cron) return
-    const updated = (cron.certificados || []).map(c =>
-      c.id === certId ? { ...c, estado: estadoActual === 'pagado' ? 'pendiente' : 'pagado' } : c
-    )
-    onSaveCronograma(p.id, cronId, { certificados: updated })
-  }
+  const totalCertificado       = allCerts.reduce((s, c) => s + (c.montoCertificado || 0), 0)
+  const totalPagado            = allCerts.reduce((s, c) => s + (c.montoPagado || 0), 0)
+  const saldoPendienteTotal    = allCerts.reduce((s, c) => s + (c.saldoPendiente || 0), 0)
+  const certificadosVencidos   = allCerts.filter(c => c.fechaVencimiento && c.fechaVencimiento < today && c.saldoPendiente > 0).length
+  const certificadosObservados = allCerts.filter(c => c.estado === 'observado').length
 
   if (allCerts.length === 0) {
     return <p style={{ fontSize: 13, color: '#9CA3AF', padding: '24px 0', textAlign: 'center' }}>No hay certificados generados aún.</p>
@@ -321,29 +348,18 @@ function TabCertificados({ p, cronograma, onSaveCronograma }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {allCerts.map((cert, i) => {
-        const isPagado = cert.estado === 'pagado'
+        const vencido = !!(cert.fechaVencimiento && cert.fechaVencimiento < today && cert.saldoPendiente > 0)
         return (
           <div key={cert.id || i} style={card}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
               <div>
                 <span style={{ fontSize: 13, fontWeight: 800, color: dark }}>Certificado #{cert.numero || i + 1}</span>
-                <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 8 }}>{fmtFecha(cert.fecha)}</span>
+                <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 8 }}>{fmtFecha(cert.fechaEmision)}</span>
+                {cert.fechaVencimiento && <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 8 }}>· vence {fmtFecha(cert.fechaVencimiento)}</span>}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: dark }}>{fmtPeso(cert.totalCertificado)}</span>
-                <Badge
-                  label={isPagado ? 'Pagado' : 'Pendiente'}
-                  color={isPagado ? green : '#D97706'}
-                  bg={isPagado ? greenLight : '#FEF3C7'}
-                />
-                <button
-                  onClick={() => handleToggle(cert.cronId, cert.id, cert.estado)}
-                  style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
-                  onMouseEnter={e => e.currentTarget.style.background = light}
-                  onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                >
-                  {isPagado ? 'Marcar pendiente' : 'Marcar pagado'}
-                </button>
+                <EstadoCertBadge estado={cert.estado} />
+                {vencido && <Badge label="Vencido" color={red} bg={redLight} borderColor={red} />}
               </div>
             </div>
 
@@ -352,6 +368,22 @@ function TabCertificados({ p, cronograma, onSaveCronograma }) {
                 <Badge label={cert.responsable} color={mid} bg={light} />
               </div>
             )}
+
+            {/* Montos */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: 8, borderTop: `1px solid ${border}`, paddingTop: 10, marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Certificado</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: dark }}>{fmtPeso(cert.montoCertificado)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Pagado</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: green }}>{fmtPeso(cert.montoPagado)}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 10, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Saldo</div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: cert.saldoPendiente > 0 ? orange : green }}>{fmtPeso(cert.saldoPendiente)}</div>
+              </div>
+            </div>
 
             {/* Etapas */}
             {(cert.etapas || []).length > 0 && (
@@ -379,9 +411,11 @@ function TabCertificados({ p, cronograma, onSaveCronograma }) {
       <div style={{ ...card, background: dark, border: 'none' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {[
-            { label: 'Total certificado acumulado', value: fmtPeso(totalCertificado), color: 'white' },
-            { label: 'Total pagado',                value: fmtPeso(totalPagado),      color: greenLight },
-            { label: 'Saldo pendiente',             value: fmtPeso(saldoPendiente),   color: saldoPendiente > 0 ? '#FDE68A' : greenLight },
+            { label: 'Total certificado acumulado', value: fmtPeso(totalCertificado),    color: 'white' },
+            { label: 'Total pagado acumulado',       value: fmtPeso(totalPagado),         color: greenLight },
+            { label: 'Saldo pendiente total',        value: fmtPeso(saldoPendienteTotal), color: saldoPendienteTotal > 0 ? '#FDE68A' : greenLight },
+            { label: 'Certificados vencidos',        value: certificadosVencidos,         color: certificadosVencidos > 0 ? '#FCA5A5' : 'rgba(255,255,255,0.7)' },
+            { label: 'Certificados observados',      value: certificadosObservados,       color: certificadosObservados > 0 ? '#FDE68A' : 'rgba(255,255,255,0.7)' },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>{label}</span>
@@ -803,7 +837,7 @@ function ProjectRow({
               />
             )}
             {activeTab === 'certificados' && (
-              <TabCertificados p={p} cronograma={cronogramaArr} onSaveCronograma={onSaveCronograma} />
+              <TabCertificados p={p} cronograma={cronogramaArr} />
             )}
             {activeTab === 'equipo' && (
               <TabEquipo p={p} teamMembers={teamMembers} />

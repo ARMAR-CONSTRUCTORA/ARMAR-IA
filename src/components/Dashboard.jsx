@@ -37,6 +37,20 @@ function fmtCorta(dateStr) {
   return new Date(dateStr.slice(0, 10) + 'T00:00:00').toLocaleDateString('es-CL', { day: 'numeric', month: 'short' })
 }
 
+const ESTADOS_CERT_VALIDOS = new Set(['borrador', 'emitido', 'aprobado_cliente', 'observado', 'facturado', 'pagado_parcial', 'pagado_total', 'anulado'])
+
+function normalizarCertificado(cert) {
+  if (!cert) return cert
+  const montoCertificado = cert.montoCertificado ?? cert.totalCertificado ?? cert.total ?? 0
+  const montoPagado = cert.montoPagado ?? 0
+  const saldoPendiente = cert.saldoPendiente != null ? cert.saldoPendiente : (montoCertificado - montoPagado)
+  let estado = cert.estado
+  if (!estado || !ESTADOS_CERT_VALIDOS.has(estado)) {
+    estado = estado === 'pagado' ? 'pagado_total' : 'emitido'
+  }
+  return { ...cert, montoCertificado, montoPagado, saldoPendiente, estado }
+}
+
 const cardBase = {
   background: 'white',
   border: `1px solid ${border}`,
@@ -147,8 +161,9 @@ function Dashboard({
   const kpiProyectos    = proyectosArmar.filter(p => p.estadoGeneral !== 'Finalizado').length
   const kpiObras        = projects.filter(p => p.status === 'activa').length
   const kpiPresupuestos = presupuestos.filter(p => p.estadoVersion === 'borrador' || p.estadoVersion === 'enviado').length
-  const allCerts        = Object.values(cronogramas).flat().flatMap(c => c.certificados || [])
-  const kpiCerts        = allCerts.filter(c => c.estado === 'pendiente').length
+  const allCerts        = Object.values(cronogramas).flat().flatMap(c => c.certificados || []).map(normalizarCertificado)
+  const kpiCerts        = allCerts.filter(c => c.saldoPendiente > 0 && c.estado !== 'anulado').length
+  const kpiCertsVencidos = allCerts.filter(c => c.fechaVencimiento && c.fechaVencimiento < today && c.saldoPendiente > 0).length
   const kpiHitos        = calendarioEventos.filter(e => e.fecha >= today && e.fecha <= in7DaysStr).length
 
   // ── Listas ──────────────────────────────────────────────────────────────────
@@ -172,7 +187,7 @@ function Dashboard({
     .slice(0, 7)
 
   // ── Layout ──────────────────────────────────────────────────────────────────
-  const kpiCols  = isMobile ? 'repeat(2, 1fr)' : isDesktop ? 'repeat(5, 1fr)' : 'repeat(3, 1fr)'
+  const kpiCols  = isMobile ? 'repeat(2, 1fr)' : isDesktop ? 'repeat(6, 1fr)' : 'repeat(3, 1fr)'
   const midCols  = isDesktop ? 'repeat(3, 1fr)' : '1fr'
   const botCols  = isDesktop ? '1fr 340px' : '1fr'
 
@@ -207,6 +222,7 @@ function Dashboard({
         <MetricCard icon="🏗️" value={kpiObras}         label="Obras activas"            color={orange}    bg={orangeLight} onClick={() => nav('obras')}       />
         <MetricCard icon="💰" value={kpiPresupuestos}  label="Presupuestos pendientes"  color={'#D97706'} bg={'#FEF3C7'}   onClick={() => nav('presupuestos')} />
         <MetricCard icon="📄" value={kpiCerts}         label="Certificados pendientes"  color={green}     bg={greenLight}  onClick={() => nav('cronogramas')} />
+        <MetricCard icon="⚠️" value={kpiCertsVencidos} label="Certificados vencidos"    color={kpiCertsVencidos > 0 ? red : mid} bg={kpiCertsVencidos > 0 ? redLight : '#F3F4F6'} onClick={() => nav('cronogramas')} />
         <MetricCard icon="📅" value={kpiHitos}         label="Hitos próx. 7 días"       color={red}       bg={redLight}    onClick={() => nav('calendario')}  />
       </div>
 
