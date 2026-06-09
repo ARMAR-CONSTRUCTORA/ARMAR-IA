@@ -346,7 +346,7 @@ function App() {
         )
 
       case 'cronogramas':
-        return <CronogramasPage projects={projects} />
+        return <CronogramasPage projects={projects} cronogramas={cronogramas} proyectosArmar={proyectosArmar} />
 
       case 'presupuestos':
         return (
@@ -392,8 +392,10 @@ function App() {
           <ProyectosPage
             isEditor={isEditor}
             projects={projects}
+            cronogramas={cronogramas}
             onCrearObra={openAdd}
             onVincularObra={handleVincularObra}
+            onNavigate={handleNavigate}
           />
         )
 

@@ -711,7 +711,7 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
 
 // ─── Card de proyecto ─────────────────────────────────────────────────────────
 
-function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo }) {
+function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate }) {
   const estadoMeta   = ESTADO_COLORS[p.estadoGeneral] || ESTADO_COLORS['En análisis']
   const avance       = checklistItems ? calcAvanceTotal(checklistItems, p.tipoEncargo) : (p.avanceTotal ?? 0)
   const tipoLabel    = TIPOS_ENCARGO.find(t => t.value === p.tipoEncargo)?.label || p.tipoEncargo || '—'
@@ -720,6 +720,12 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
 
   // Compuerta: último ítem de última etapa aprobado
   const compuertaOk  = checklistItems?.some(it => it.esCompuerta && it.estado === 'aprobado') || false
+
+  // Obra vinculada y su cronograma
+  const linkedObra      = (projects || []).find(o => o.proyectoArmarId === p.id)
+  const obraCronogramas = linkedObra ? (cronogramas?.[linkedObra.id] || []) : []
+  const hasCronograma   = obraCronogramas.length > 0
+  const avanceObra      = linkedObra?.progress ?? 0
 
   // Info extra para obra externa
   const modalidad    = p.responsableObra    || ''
@@ -755,6 +761,13 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
                 </span>
               )
             })()}
+            {linkedObra && (
+              hasCronograma
+                ? avanceObra > 0
+                  ? <span style={{ fontSize: 10, fontWeight: 700, color: orange, background: orangeLight, padding: '2px 9px', borderRadius: 99, flexShrink: 0 }}>En ejecución {avanceObra}%</span>
+                  : <span style={{ fontSize: 10, fontWeight: 700, color: green, background: greenLight, padding: '2px 9px', borderRadius: 99, flexShrink: 0 }}>Cronograma cargado</span>
+                : <span style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', background: '#F3F4F6', padding: '2px 9px', borderRadius: 99, flexShrink: 0 }}>Sin cronograma</span>
+            )}
           </div>
           <div style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.6 }}>
             {[p.comitente, p.direccion || p.zona, p.tipoObra].filter(Boolean).join(' · ')}
@@ -802,13 +815,23 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
       {/* ── Botón compuerta ── */}
       {compuertaOk && (
         <div style={{ padding: '0 16px 12px', background: 'white' }} onClick={e => e.stopPropagation()}>
-          <button
-            onClick={e => { e.stopPropagation(); onVincularObra() }}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, border: 'none', background: green, color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(45,122,79,0.3)' }}
-            onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
-            onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
-            ✓ Proyecto listo — Crear / vincular obra
-          </button>
+          {linkedObra && hasCronograma ? (
+            <button
+              onClick={e => { e.stopPropagation(); onNavigate('cronogramas') }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, border: 'none', background: blue, color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(37,99,235,0.3)' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+              ▶ Ver obra y cronograma
+            </button>
+          ) : (
+            <button
+              onClick={e => { e.stopPropagation(); onVincularObra() }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, border: 'none', background: green, color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(45,122,79,0.3)' }}
+              onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
+              onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
+              ✓ Proyecto listo — Crear / vincular obra
+            </button>
+          )}
         </div>
       )}
 
@@ -841,7 +864,7 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
-function ProyectosPage({ isEditor, projects, onCrearObra, onVincularObra }) {
+function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincularObra, onNavigate }) {
   const [proyectos,       setProyectos]       = useState([])
   const [loading,         setLoading]         = useState(true)
   const [showModal,       setShowModal]       = useState(false)
@@ -971,6 +994,9 @@ function ProyectosPage({ isEditor, projects, onCrearObra, onVincularObra }) {
               onUpdateItem={handleUpdateItem}
               onVincularObra={() => setVincularProyecto(p)}
               presupuestoInfo={presupuestosMap[p.id] || null}
+              projects={projects}
+              cronogramas={cronogramas}
+              onNavigate={onNavigate}
             />
           ))}
         </div>

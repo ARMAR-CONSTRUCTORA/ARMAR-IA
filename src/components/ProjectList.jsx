@@ -213,6 +213,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
             onDeleteCronograma={onDeleteCronograma}
             onEditarInforme={onEditarInforme}
             isEditor={isEditor}
+            proyectosArmar={proyectosArmar}
           />
         </div>
       )}

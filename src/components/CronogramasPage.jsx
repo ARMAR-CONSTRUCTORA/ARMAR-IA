@@ -50,7 +50,7 @@ function fmtShortDate(str) {
 }
 
 // ── Componente principal ───────────────────────────────────────────────────
-function CronogramasPage({ projects }) {
+function CronogramasPage({ projects, proyectosArmar }) {
   const { isMobile } = useBreakpoint()
   const [filter, setFilter] = useState('todas')
   const [ppd, setPPD]       = useState(DEFAULT_PPD)
@@ -324,6 +324,7 @@ wheelCbRef.current = (e) => {
                 const barX   = toPx(pd(p.startDate))
                 const barW   = Math.max(4, toPx(pd(p.endDate)) - barX)
                 const rowBg  = i % 2 === 0 ? 'white' : '#FAFAFA'
+                const proyArmar = p.proyectoArmarId ? (proyectosArmar || []).find(pa => pa.id === p.proyectoArmarId) : null
 
                 return (
                   <div key={p.id} style={{
@@ -349,6 +350,11 @@ wheelCbRef.current = (e) => {
                       {!isMobile && (
                         <div style={{ color: 'var(--gray-400)', fontSize: 10, marginTop: 3 }}>
                           {fmtShortDate(p.startDate)} → {fmtShortDate(p.endDate)}
+                        </div>
+                      )}
+                      {!isMobile && proyArmar && (
+                        <div style={{ fontSize: 9, fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '1px 6px', borderRadius: 4, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {proyArmar.nombre}
                         </div>
                       )}
                     </div>

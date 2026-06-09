@@ -4,6 +4,7 @@ import { calcDuracionHabil, computeCascade } from '../utils/calendarUtils'
 import ModalCrearCronograma from './ModalCrearCronograma'
 import ModalCargarAvance from './ModalCargarAvance'
 import ModalEditarEtapa from './ModalEditarEtapa'
+import { loadChecklistItems, upsertChecklistItem } from '../lib/supabase'
 
 const ESTADO_STYLE = {
   'Pendiente':   { color: '#6B7280', bg: '#F3F4F6', border: '#D1D5DB' },
@@ -1159,8 +1160,9 @@ function ModalImpacto({ data, onApply, onDismiss }) {
   )
 }
 
-export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor }) {
+export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor, proyectosArmar }) {
   const [selectedId,      setSelectedId]      = useState(() => cronogramas[0]?.id || null)
+  const [toast,           setToast]           = useState('')
   const [showCrearModal,  setShowCrearModal]   = useState(false)
   const [showAvanceModal, setShowAvanceModal]  = useState(false)
   const [showCertModal,   setShowCertModal]    = useState(false)
@@ -1184,11 +1186,37 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     prevLen.current = cronogramas.length
   }, [cronogramas])
 
+  const handleCreateCronogramaLocal = async (data) => {
+    onCreateCronograma(project.id, data)
+    setShowCrearModal(false)
+    if (project.proyectoArmarId) {
+      const items = await loadChecklistItems(project.proyectoArmarId)
+      const targets = items.filter(it => it.titulo?.toLowerCase().includes('cronograma') && it.estado !== 'aprobado')
+      if (targets.length > 0) await Promise.all(targets.map(it => upsertChecklistItem({ ...it, estado: 'aprobado' })))
+      setToast('Checklist actualizado: ítems de Cronograma marcados como aprobados')
+      setTimeout(() => setToast(''), 3500)
+    }
+  }
+
+  const handleCargarAvanceLocal = async (pid, cronId, informe, tareasActualizadas, certData) => {
+    onCargarAvance(pid, cronId, informe, tareasActualizadas, certData)
+    setShowAvanceModal(false)
+    if (project.proyectoArmarId) {
+      const items = await loadChecklistItems(project.proyectoArmarId)
+      const lc = s => s?.toLowerCase() || ''
+      const targets = items.filter(it => (lc(it.titulo).includes('avance') || lc(it.titulo).includes('informe')) && it.estado !== 'aprobado')
+      if (targets.length > 0) await Promise.all(targets.map(it => upsertChecklistItem({ ...it, estado: 'en_curso' })))
+      setToast('Checklist actualizado: ítems de Avance/Informe marcados como en curso')
+      setTimeout(() => setToast(''), 3500)
+    }
+  }
+
   if (!cronogramas.length) {
     return (
       <>
         <EmptyState onCrear={() => setShowCrearModal(true)} isEditor={isEditor} />
-        {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />}
+        {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={handleCreateCronogramaLocal} />}
+        {toast && <div style={{ position: 'fixed', bottom: 28, right: 28, background: '#1A1A1A', color: 'white', padding: '12px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 500, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>{toast}</div>}
       </>
     )
   }
@@ -1354,6 +1382,17 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         {isEditor && <button onClick={() => setShowCrearModal(true)} style={{ padding: '6px 12px', borderRadius: 7, border: '1px dashed var(--gray-300)', background: 'white', color: 'var(--gray-500)', fontSize: 16, cursor: 'pointer', fontWeight: 700, flexShrink: 0 }} title="Nuevo cronograma">+</button>}
       </div>
 
+      {project.proyectoArmarId && (() => {
+        const pa = (proyectosArmar || []).find(pa => pa.id === project.proyectoArmarId)
+        if (!pa) return null
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '3px 10px', borderRadius: 99, border: '1px solid #BFDBFE' }}>
+              Proyecto: {pa.nombre}
+            </span>
+          </div>
+        )
+      })()}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {isEditor && (structuralMode ? (
           <button onClick={() => setStructuralMode(false)} style={btnStyle(true)}>✓ Listo</button>
@@ -1393,8 +1432,9 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} onEliminarInforme={isEditor ? handleEliminarInforme : null} isEditor={isEditor} />
       <HistorialCertificados certificados={certificados} isEditor={isEditor} onEditar={isEditor ? setEditingCert : null} onEliminarCertificado={isEditor ? handleEliminarCertificado : null} />
 
-      {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={(data) => { onCreateCronograma(project.id, data); setShowCrearModal(false) }} />}
-      {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} certificados={certificados} onGuardar={(pid, informe, tareasActualizadas, certData) => { onCargarAvance(pid, cronograma.id, informe, tareasActualizadas, certData) }} onClose={() => setShowAvanceModal(false)} />}
+      {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={handleCreateCronogramaLocal} />}
+      {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} certificados={certificados} onGuardar={(pid, informe, tareasActualizadas, certData) => handleCargarAvanceLocal(pid, cronograma.id, informe, tareasActualizadas, certData)} onClose={() => setShowAvanceModal(false)} />}
+      {toast && <div style={{ position: 'fixed', bottom: 28, right: 28, background: '#1A1A1A', color: 'white', padding: '12px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 500, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>{toast}</div>}
       {showCertModal && <ModalCertificado tareas={tareas} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
       {editingCert && <ModalCertificado tareas={tareas} certificados={certificados} numero={editingCert.numero} teamMembers={teamMembers} editCert={editingCert} onClose={() => setEditingCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setEditingCert(null) }} />}
       {editingTarea && (
