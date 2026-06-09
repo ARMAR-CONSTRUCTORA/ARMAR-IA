@@ -582,6 +582,22 @@ export async function loadPresupuestosResumen() {
   }))
 }
 
+export async function loadPresupuestosBasic() {
+  const { data, error } = await supabase
+    .from('presupuestos')
+    .select('id, proyecto_id, proyecto_armar_id, estado_version, fecha_creacion')
+    .eq('es_version_vigente', true)
+    .order('fecha_creacion', { ascending: false })
+  if (error) { console.error('loadPresupuestosBasic:', error); return [] }
+  return (data || []).map(r => ({
+    id:              r.id,
+    proyectoId:      r.proyecto_id,
+    proyectoArmarId: r.proyecto_armar_id || null,
+    estadoVersion:   r.estado_version || 'borrador',
+    fechaCreacion:   r.fecha_creacion || '',
+  }))
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
 export async function loginUsuario(nombre, password) {

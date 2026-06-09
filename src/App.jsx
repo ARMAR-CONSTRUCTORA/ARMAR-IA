@@ -20,6 +20,7 @@ import {
   loadTeamMembers, upsertTeamMember, deleteTeamMember,
   loadProyectosArmar,
   loadCalendarioEventos, upsertCalendarioEvento, deleteCalendarioEvento,
+  loadPresupuestosBasic,
 } from './lib/supabase'
 
 const SESSION_KEY = 'armar-ia-user'
@@ -57,6 +58,7 @@ function App() {
   const [cronogramas, setCronogramas] = useState({})
   const [proyectosArmar, setProyectosArmar] = useState([])
   const [calendarioEventos, setCalendarioEventos] = useState([])
+  const [presupuestos,      setPresupuestos]      = useState([])
   const [prefillProjectData, setPrefillProjectData] = useState(null)
 
   const [currentUser, setCurrentUser] = useState(() => {
@@ -84,12 +86,14 @@ function App() {
       loadCronogramasAll(),
       loadProyectosArmar(),
       loadCalendarioEventos(),
-    ]).then(([projs, team, cronos, proyArmar, calEvs]) => {
+      loadPresupuestosBasic(),
+    ]).then(([projs, team, cronos, proyArmar, calEvs, presups]) => {
       setProjects(projs)
       setTeamMembers(team)
       setCronogramas(cronos)
       setProyectosArmar(proyArmar)
       setCalendarioEventos(calEvs)
+      setPresupuestos(presups)
       setSelectedBudgetProjectId(projs?.[0]?.id ?? null)
       setLoading(false)
     })
@@ -112,6 +116,9 @@ function App() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'calendario_eventos' }, () => {
         loadCalendarioEventos().then(setCalendarioEventos)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, () => {
+        loadPresupuestosBasic().then(setPresupuestos)
       })
       .subscribe()
 
@@ -345,7 +352,19 @@ function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} isEditor={isEditor} calendarioEventos={calendarioEventos} />
+        return (
+          <Dashboard
+            projects={projects}
+            cronogramas={cronogramas}
+            proyectosArmar={proyectosArmar}
+            calendarioEventos={calendarioEventos}
+            presupuestos={presupuestos}
+            teamMembers={teamMembers}
+            onAdd={openAdd}
+            onNavigate={handleNavigate}
+            isEditor={isEditor}
+          />
+        )
 
       case 'obras':
         return (
