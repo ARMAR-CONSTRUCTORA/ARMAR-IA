@@ -8,6 +8,7 @@ import {
   upsertChecklistItem,
   insertChecklistItems,
   loadPresupuestosResumen,
+  upsertCalendarioEvento,
 } from '../lib/supabase'
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
@@ -919,6 +920,14 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
         setChecklistMap(prev => ({ ...prev, [created.id]: items }))
         setLoadedCL(prev => new Set([...prev, created.id]))
         setExpandedId(created.id)
+        upsertCalendarioEvento({
+          proyectoArmarId: created.id,
+          origen:     'proyecto',
+          tipoEvento: 'hito',
+          titulo:     `Kickoff: ${created.nombre}`,
+          fecha:      created.fechaInicio || new Date().toISOString().slice(0, 10),
+          estado:     'pendiente',
+        })
       }
     }
     setShowModal(false)
@@ -946,6 +955,29 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
       const avance = calcAvanceTotal(withMark, proy.tipoEncargo)
       const upd    = await upsertProyectoArmar({ ...proy, avanceTotal: avance })
       if (upd) setProyectos(prev => prev.map(p => p.id === upd.id ? upd : p))
+    }
+    if (updated.estado === 'aprobado') {
+      const tituloLower = (updated.titulo || '').toLowerCase()
+      const hoy = new Date().toISOString().slice(0, 10)
+      if (tituloLower.includes('versión final de anteproyecto')) {
+        upsertCalendarioEvento({
+          proyectoArmarId: updated.proyectoArmarId,
+          origen:     'proyecto',
+          tipoEvento: 'hito',
+          titulo:     `Anteproyecto aprobado: ${proy?.nombre || ''}`,
+          fecha:      hoy,
+          estado:     'completado',
+        })
+      } else if (tituloLower.includes('transferencia') && (tituloLower.includes('obra') || tituloLower.includes('inicio'))) {
+        upsertCalendarioEvento({
+          proyectoArmarId: updated.proyectoArmarId,
+          origen:     'proyecto',
+          tipoEvento: 'hito',
+          titulo:     `Transferencia a obra: ${proy?.nombre || ''}`,
+          fecha:      hoy,
+          estado:     'completado',
+        })
+      }
     }
   }
 

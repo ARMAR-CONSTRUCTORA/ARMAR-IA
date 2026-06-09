@@ -19,6 +19,7 @@ import {
   loadCronogramasAll, upsertCronograma, deleteCronograma,
   loadTeamMembers, upsertTeamMember, deleteTeamMember,
   loadProyectosArmar,
+  loadCalendarioEventos, upsertCalendarioEvento, deleteCalendarioEvento,
 } from './lib/supabase'
 
 const SESSION_KEY = 'armar-ia-user'
@@ -55,6 +56,7 @@ function App() {
   const [teamMembers, setTeamMembers] = useState([])
   const [cronogramas, setCronogramas] = useState({})
   const [proyectosArmar, setProyectosArmar] = useState([])
+  const [calendarioEventos, setCalendarioEventos] = useState([])
   const [prefillProjectData, setPrefillProjectData] = useState(null)
 
   const [currentUser, setCurrentUser] = useState(() => {
@@ -81,11 +83,13 @@ function App() {
       loadTeamMembers(),
       loadCronogramasAll(),
       loadProyectosArmar(),
-    ]).then(([projs, team, cronos, proyArmar]) => {
+      loadCalendarioEventos(),
+    ]).then(([projs, team, cronos, proyArmar, calEvs]) => {
       setProjects(projs)
       setTeamMembers(team)
       setCronogramas(cronos)
       setProyectosArmar(proyArmar)
+      setCalendarioEventos(calEvs)
       setSelectedBudgetProjectId(projs?.[0]?.id ?? null)
       setLoading(false)
     })
@@ -105,6 +109,9 @@ function App() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'team_members' }, () => {
         loadTeamMembers().then(setTeamMembers)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'calendario_eventos' }, () => {
+        loadCalendarioEventos().then(setCalendarioEventos)
       })
       .subscribe()
 
@@ -148,6 +155,21 @@ function App() {
     await upsertProject(updated)
   }
   const handleNavigate = (page) => { setActivePage(page); setMenuOpen(false) }
+
+  const handleUpsertEvento = async (evento) => {
+    const saved = await upsertCalendarioEvento(evento)
+    if (saved) {
+      setCalendarioEventos(prev => {
+        const idx = prev.findIndex(e => e.id === saved.id)
+        return idx >= 0 ? prev.map(e => e.id === saved.id ? saved : e) : [...prev, saved]
+      })
+    }
+  }
+
+  const handleDeleteEvento = async (id) => {
+    setCalendarioEventos(prev => prev.filter(e => e.id !== id))
+    await deleteCalendarioEvento(id)
+  }
 
   const handleSave = async (data) => {
     if (editingProject) {
@@ -323,7 +345,7 @@ function App() {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard':
-        return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} isEditor={isEditor} />
+        return <Dashboard projects={projects} onAdd={openAdd} onNavigateToObras={() => handleNavigate('obras')} isEditor={isEditor} calendarioEventos={calendarioEventos} />
 
       case 'obras':
         return (
@@ -412,7 +434,7 @@ function App() {
         )
 
       case 'calendario':
-        return <CalendarioPage />
+        return <CalendarioPage eventos={calendarioEventos} proyectosArmar={proyectosArmar} isEditor={isEditor} onUpsertEvento={handleUpsertEvento} onDeleteEvento={handleDeleteEvento} />
 
       case 'configuracion':
         return <ConfigPage />

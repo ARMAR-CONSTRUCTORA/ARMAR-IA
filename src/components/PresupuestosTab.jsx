@@ -12,6 +12,7 @@ import {
   vincularPresupuestoAProyecto,
   loadChecklistItems,
   upsertChecklistItem,
+  upsertCalendarioEvento,
 } from "../lib/supabase";
 
 const UNIDADES = ["GLOBAL", "UNIDAD", "M2", "M3"];
@@ -442,23 +443,34 @@ export default function PresupuestosTab({ proyecto, proyectosArmar, isEditor }) 
     await updatePresupuestoEstado(presupuesto.id, nuevoEstado);
     setPresupuesto(prev => ({ ...prev, estadoVersion: nuevoEstado }));
 
-    if (nuevoEstado === 'aprobado' && presupuesto.proyectoArmarId) {
-      try {
-        const items = await loadChecklistItems(presupuesto.proyectoArmarId);
-        const aActualizar = items.filter(it =>
-          it.estado !== 'aprobado' && (
-            it.titulo.toLowerCase().includes('presupuesto aprobado') ||
-            it.titulo.toLowerCase().includes('presupuesto de obra completo') ||
-            it.titulo.toLowerCase().includes('presupuesto final')
-          )
-        );
-        if (aActualizar.length > 0) {
-          await Promise.all(aActualizar.map(it => upsertChecklistItem({ ...it, estado: 'aprobado' })));
-          setToast('✓ Checklist del proyecto actualizado');
-          setTimeout(() => setToast(''), 3500);
+    if (nuevoEstado === 'aprobado') {
+      upsertCalendarioEvento({
+        obraId:          proyecto.id || null,
+        proyectoArmarId: presupuesto.proyectoArmarId || null,
+        origen:          'presupuesto',
+        tipoEvento:      'hito',
+        titulo:          `Presupuesto aprobado: ${proyecto.name}`,
+        fecha:           new Date().toISOString().slice(0, 10),
+        estado:          'completado',
+      })
+      if (presupuesto.proyectoArmarId) {
+        try {
+          const items = await loadChecklistItems(presupuesto.proyectoArmarId);
+          const aActualizar = items.filter(it =>
+            it.estado !== 'aprobado' && (
+              it.titulo.toLowerCase().includes('presupuesto aprobado') ||
+              it.titulo.toLowerCase().includes('presupuesto de obra completo') ||
+              it.titulo.toLowerCase().includes('presupuesto final')
+            )
+          );
+          if (aActualizar.length > 0) {
+            await Promise.all(aActualizar.map(it => upsertChecklistItem({ ...it, estado: 'aprobado' })));
+            setToast('✓ Checklist del proyecto actualizado');
+            setTimeout(() => setToast(''), 3500);
+          }
+        } catch (err) {
+          console.error('handleEstado checklist:', err);
         }
-      } catch (err) {
-        console.error('handleEstado checklist:', err);
       }
     }
   }

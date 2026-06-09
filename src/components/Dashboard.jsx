@@ -47,7 +47,7 @@ function MiniBar({ value }) {
   )
 }
 
-function Dashboard({ projects, onAdd, onNavigateToObras, isEditor }) {
+function Dashboard({ projects, onAdd, onNavigateToObras, isEditor, calendarioEventos = [] }) {
   const { isMobile, isTablet } = useBreakpoint()
   const compact = isMobile || isTablet
 
@@ -280,7 +280,7 @@ function Dashboard({ projects, onAdd, onNavigateToObras, isEditor }) {
           )}
 
           {/* Mini calendario */}
-          <CalendarioTab compact />
+          <CalendarioTab compact eventos={calendarioEventos} />
         </div>
       </div>
     </div>

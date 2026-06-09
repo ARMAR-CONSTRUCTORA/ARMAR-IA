@@ -773,3 +773,55 @@ export async function insertChecklistItems(items) {
   console.log('[insertChecklistItems] OK — insertados:', data?.length)
   return (data || []).map(fromDbChecklistItem)
 }
+
+// ── Calendario Eventos ────────────────────────────────────────────────────────
+
+function fromDbCalendarioEvento(row) {
+  return {
+    id:              row.id,
+    proyectoArmarId: row.proyecto_armar_id || null,
+    obraId:          row.obra_id ? Number(row.obra_id) : null,
+    cronogramaId:    row.cronograma_id || null,
+    presupuestoId:   row.presupuesto_id || null,
+    origen:          row.origen || 'manual',
+    tipoEvento:      row.tipo_evento || 'hito',
+    titulo:          row.titulo || '',
+    descripcion:     row.descripcion || '',
+    fecha:           row.fecha || '',
+    estado:          row.estado || 'pendiente',
+  }
+}
+
+function toDbCalendarioEvento(e) {
+  const out = {
+    proyecto_armar_id: e.proyectoArmarId || null,
+    obra_id:           e.obraId || null,
+    cronograma_id:     e.cronogramaId || null,
+    presupuesto_id:    e.presupuestoId || null,
+    origen:            e.origen || 'manual',
+    tipo_evento:       e.tipoEvento || 'hito',
+    titulo:            e.titulo || '',
+    descripcion:       e.descripcion || '',
+    fecha:             e.fecha || null,
+    estado:            e.estado || 'pendiente',
+  }
+  if (e.id) out.id = e.id
+  return out
+}
+
+export async function loadCalendarioEventos() {
+  const { data, error } = await supabase.from('calendario_eventos').select('*').order('fecha', { ascending: true })
+  if (error) { console.error('loadCalendarioEventos:', error); return [] }
+  return (data || []).map(fromDbCalendarioEvento)
+}
+
+export async function upsertCalendarioEvento(evento) {
+  const { data, error } = await supabase.from('calendario_eventos').upsert(toDbCalendarioEvento(evento)).select().single()
+  if (error) { console.error('upsertCalendarioEvento:', error); return null }
+  return fromDbCalendarioEvento(data)
+}
+
+export async function deleteCalendarioEvento(id) {
+  const { error } = await supabase.from('calendario_eventos').delete().eq('id', id)
+  if (error) console.error('deleteCalendarioEvento:', error)
+}

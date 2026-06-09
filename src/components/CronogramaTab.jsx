@@ -4,7 +4,7 @@ import { calcDuracionHabil, computeCascade } from '../utils/calendarUtils'
 import ModalCrearCronograma from './ModalCrearCronograma'
 import ModalCargarAvance from './ModalCargarAvance'
 import ModalEditarEtapa from './ModalEditarEtapa'
-import { loadChecklistItems, upsertChecklistItem } from '../lib/supabase'
+import { loadChecklistItems, upsertChecklistItem, upsertCalendarioEvento } from '../lib/supabase'
 
 const ESTADO_STYLE = {
   'Pendiente':   { color: '#6B7280', bg: '#F3F4F6', border: '#D1D5DB' },
@@ -1189,6 +1189,17 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const handleCreateCronogramaLocal = async (data) => {
     onCreateCronograma(project.id, data)
     setShowCrearModal(false)
+    const primeraEtapa = (data.tareas || []).find(t => t.parentId === null)
+    const fechaEvento  = primeraEtapa?.fechaInicio || new Date().toISOString().slice(0, 10)
+    upsertCalendarioEvento({
+      obraId:          project.id,
+      proyectoArmarId: project.proyectoArmarId || null,
+      origen:          'cronograma',
+      tipoEvento:      'hito',
+      titulo:          `Inicio de obra: ${project.name}`,
+      fecha:           fechaEvento,
+      estado:          'pendiente',
+    })
     if (project.proyectoArmarId) {
       const items = await loadChecklistItems(project.proyectoArmarId)
       const targets = items.filter(it => it.titulo?.toLowerCase().includes('cronograma') && it.estado !== 'aprobado')
@@ -1201,6 +1212,15 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const handleCargarAvanceLocal = async (pid, cronId, informe, tareasActualizadas, certData) => {
     onCargarAvance(pid, cronId, informe, tareasActualizadas, certData)
     setShowAvanceModal(false)
+    upsertCalendarioEvento({
+      obraId:          project.id,
+      proyectoArmarId: project.proyectoArmarId || null,
+      origen:          'cronograma',
+      tipoEvento:      'hito',
+      titulo:          `Informe de avance${informe.numero ? ` #${informe.numero}` : ''}: ${project.name}`,
+      fecha:           informe.fecha || new Date().toISOString().slice(0, 10),
+      estado:          'completado',
+    })
     if (project.proyectoArmarId) {
       const items = await loadChecklistItems(project.proyectoArmarId)
       const lc = s => s?.toLowerCase() || ''
