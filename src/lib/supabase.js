@@ -841,3 +841,57 @@ export async function deleteCalendarioEvento(id) {
   const { error } = await supabase.from('calendario_eventos').delete().eq('id', id)
   if (error) console.error('deleteCalendarioEvento:', error)
 }
+
+// ── Hitos de Obra ─────────────────────────────────────────────────────────────
+
+function fromDbHito(row) {
+  return {
+    id:               row.id,
+    obraId:           row.obra_id ? Number(row.obra_id) : null,
+    cronogramaId:     row.cronograma_id || null,
+    nombre:           row.nombre || '',
+    descripcion:      row.descripcion || '',
+    fechaPrevista:    row.fecha_prevista || '',
+    fechaReal:        row.fecha_real || null,
+    estado:           row.estado || 'pendiente',
+    responsable:      row.responsable || '',
+    impactoSiDemora:  row.impacto_si_demora || '',
+    visibleCalendario: row.visible_calendario !== false,
+    observaciones:    row.observaciones || '',
+  }
+}
+
+function toDbHito(h) {
+  const out = {
+    obra_id:            h.obraId || null,
+    cronograma_id:      h.cronogramaId || null,
+    nombre:             h.nombre || '',
+    descripcion:        h.descripcion || '',
+    fecha_prevista:     h.fechaPrevista || null,
+    fecha_real:         h.fechaReal || null,
+    estado:             h.estado || 'pendiente',
+    responsable:        h.responsable || '',
+    impacto_si_demora:  h.impactoSiDemora || '',
+    visible_calendario: h.visibleCalendario !== false,
+    observaciones:      h.observaciones || '',
+  }
+  if (h.id) out.id = h.id
+  return out
+}
+
+export async function loadHitos() {
+  const { data, error } = await supabase.from('obra_hitos').select('*').order('fecha_prevista', { ascending: true })
+  if (error) { console.error('loadHitos:', error); return [] }
+  return (data || []).map(fromDbHito)
+}
+
+export async function upsertHito(hito) {
+  const { data, error } = await supabase.from('obra_hitos').upsert(toDbHito(hito)).select().single()
+  if (error) { console.error('upsertHito:', error); return null }
+  return fromDbHito(data)
+}
+
+export async function deleteHito(id) {
+  const { error } = await supabase.from('obra_hitos').delete().eq('id', id)
+  if (error) console.error('deleteHito:', error)
+}

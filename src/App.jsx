@@ -21,6 +21,7 @@ import {
   loadProyectosArmar,
   loadCalendarioEventos, upsertCalendarioEvento, deleteCalendarioEvento,
   loadPresupuestosBasic,
+  loadHitos, upsertHito, deleteHito,
 } from './lib/supabase'
 
 const SESSION_KEY = 'armar-ia-user'
@@ -59,6 +60,7 @@ function App() {
   const [proyectosArmar, setProyectosArmar] = useState([])
   const [calendarioEventos, setCalendarioEventos] = useState([])
   const [presupuestos,      setPresupuestos]      = useState([])
+  const [obraHitos,         setObraHitos]         = useState([])
   const [prefillProjectData, setPrefillProjectData] = useState(null)
 
   const [currentUser, setCurrentUser] = useState(() => {
@@ -87,13 +89,15 @@ function App() {
       loadProyectosArmar(),
       loadCalendarioEventos(),
       loadPresupuestosBasic(),
-    ]).then(([projs, team, cronos, proyArmar, calEvs, presups]) => {
+      loadHitos(),
+    ]).then(([projs, team, cronos, proyArmar, calEvs, presups, hitos]) => {
       setProjects(projs)
       setTeamMembers(team)
       setCronogramas(cronos)
       setProyectosArmar(proyArmar)
       setCalendarioEventos(calEvs)
       setPresupuestos(presups)
+      setObraHitos(hitos)
       setSelectedBudgetProjectId(projs?.[0]?.id ?? null)
       setLoading(false)
     })
@@ -119,6 +123,9 @@ function App() {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'presupuestos' }, () => {
         loadPresupuestosBasic().then(setPresupuestos)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'obra_hitos' }, () => {
+        loadHitos().then(setObraHitos)
       })
       .subscribe()
 
@@ -176,6 +183,49 @@ function App() {
   const handleDeleteEvento = async (id) => {
     setCalendarioEventos(prev => prev.filter(e => e.id !== id))
     await deleteCalendarioEvento(id)
+  }
+
+  const handleGuardarHito = async (hito) => {
+    const id = hito.id || crypto.randomUUID()
+    const hitoConId = { ...hito, id }
+
+    const saved = await upsertHito(hitoConId)
+    if (saved) {
+      setObraHitos(prev => {
+        const idx = prev.findIndex(h => h.id === saved.id)
+        return idx >= 0 ? prev.map(h => h.id === saved.id ? saved : h) : [...prev, saved]
+      })
+    }
+
+    if (hitoConId.visibleCalendario) {
+      const obra = projects.find(p => String(p.id) === String(hitoConId.obraId))
+      await handleUpsertEvento({
+        id,
+        origen: 'obra',
+        tipoEvento: 'hito',
+        titulo: `Hito: ${hitoConId.nombre} — ${obra?.name || ''}`,
+        fecha: hitoConId.fechaPrevista,
+        obraId: hitoConId.obraId,
+        estado: hitoConId.estado,
+      })
+    } else {
+      setCalendarioEventos(prev => prev.filter(e => e.id !== id))
+      await deleteCalendarioEvento(id)
+    }
+
+    return saved
+  }
+
+  const handleEliminarHito = async (id) => {
+    setObraHitos(prev => prev.filter(h => h.id !== id))
+    setCalendarioEventos(prev => prev.filter(e => e.id !== id))
+    await Promise.all([deleteHito(id), deleteCalendarioEvento(id)])
+  }
+
+  const handleMarcarHitoCumplido = async (id, fechaReal) => {
+    const hito = obraHitos.find(h => h.id === id)
+    if (!hito) return
+    await handleGuardarHito({ ...hito, estado: 'cumplido', fechaReal })
   }
 
   const handleSave = async (data) => {
@@ -360,6 +410,10 @@ function App() {
             calendarioEventos={calendarioEventos}
             presupuestos={presupuestos}
             teamMembers={teamMembers}
+            obraHitos={obraHitos}
+            onGuardarHito={handleGuardarHito}
+            onEliminarHito={handleEliminarHito}
+            onMarcarHitoCumplido={handleMarcarHitoCumplido}
             onAdd={openAdd}
             onNavigate={handleNavigate}
             isEditor={isEditor}
@@ -374,6 +428,10 @@ function App() {
             teamMembers={teamMembers}
             proyectosArmar={proyectosArmar}
             presupuestos={presupuestos}
+            obraHitos={obraHitos}
+            onGuardarHito={handleGuardarHito}
+            onEliminarHito={handleEliminarHito}
+            onMarcarHitoCumplido={handleMarcarHitoCumplido}
             onAdd={openAdd}
             onEdit={openEdit}
             onDelete={setDeleteTarget}

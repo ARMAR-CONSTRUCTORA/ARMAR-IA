@@ -125,6 +125,10 @@ function Dashboard({
   calendarioEventos = [],
   presupuestos    = [],
   teamMembers     = [],
+  obraHitos       = [],
+  onGuardarHito,
+  onEliminarHito,
+  onMarcarHitoCumplido,
   onAdd,
   onNavigate,
   isEditor,
@@ -150,8 +154,22 @@ function Dashboard({
   // ── Listas ──────────────────────────────────────────────────────────────────
   const proyActivos     = proyectosArmar.filter(p => p.estadoGeneral !== 'Finalizado').slice(0, 5)
   const obrasActivas    = projects.filter(p => p.status === 'activa').slice(0, 5)
-  const proximosHitos   = calendarioEventos.filter(e => e.fecha >= today).slice(0, 7)
   const presupRecientes = presupuestos.slice(0, 5)
+
+  const hitosObraProximos = obraHitos
+    .filter(h => h.estado === 'pendiente' && h.fechaPrevista >= today && h.fechaPrevista <= in7DaysStr)
+    .map(h => ({
+      id:         `hito-${h.id}`,
+      titulo:     h.nombre,
+      tipoEvento: 'hito',
+      fecha:      h.fechaPrevista,
+      origen:     'obra',
+      esHitoObra: true,
+    }))
+
+  const proximosHitos = [...calendarioEventos.filter(e => e.fecha >= today && e.origen !== 'obra'), ...hitosObraProximos]
+    .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
+    .slice(0, 7)
 
   // ── Layout ──────────────────────────────────────────────────────────────────
   const kpiCols  = isMobile ? 'repeat(2, 1fr)' : isDesktop ? 'repeat(5, 1fr)' : 'repeat(3, 1fr)'
@@ -264,10 +282,13 @@ function Dashboard({
               return (
                 <div key={ev.id}>
                   <div style={{ padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 1 }} />
+                    {ev.esHitoObra
+                      ? <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1 }}>🎯</span>
+                      : <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 1 }} />
+                    }
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.titulo}</div>
-                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1, textTransform: 'capitalize' }}>{ev.tipoEvento}</div>
+                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1, textTransform: 'capitalize' }}>{ev.esHitoObra ? 'hito de obra' : ev.tipoEvento}</div>
                     </div>
                     <span style={{ fontSize: 11, fontWeight: 700, color: isHoy ? orange : color, background: isHoy ? orangeLight : `${color}18`, padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>
                       {isHoy ? 'Hoy' : fmtCorta(ev.fecha)}
