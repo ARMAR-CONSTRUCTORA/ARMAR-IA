@@ -63,7 +63,7 @@ function Avatar({ name }) {
 }
 
 // ── Fila expandible ───────────────────────────────────────────────────────────
-function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isDesktop, teamMembers, isEditor }) {
+function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isDesktop, teamMembers, isEditor, proyectosArmar }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -91,7 +91,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
           flexShrink: 0, width: 14,
         }}>▶</div>
 
-        {/* Nombre + ubicación */}
+        {/* Nombre + ubicación + badge proyecto */}
         <div style={{ flex: isDesktop ? '0 0 220px' : 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--gray-900)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {p.name}
@@ -102,6 +102,21 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.location}</span>
             </div>
           )}
+          {(() => {
+            const proy = proyectosArmar?.find(pa => pa.id === p.proyectoArmarId)
+            if (proy) {
+              return (
+                <span style={{ display: 'inline-block', marginTop: 3, fontSize: 10, fontWeight: 700, color: '#2563EB', background: '#EFF6FF', padding: '1px 7px', borderRadius: 99, border: '1px solid #BFDBFE', whiteSpace: 'nowrap', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {proy.nombre}
+                </span>
+              )
+            }
+            return (
+              <span style={{ display: 'inline-block', marginTop: 3, fontSize: 10, fontWeight: 600, color: '#D97706', background: '#FFFBEB', padding: '1px 7px', borderRadius: 99, border: '1px solid #FDE68A', whiteSpace: 'nowrap' }}>
+                Sin proyecto vinculado
+              </span>
+            )
+          })()}
         </div>
 
         {/* Período — solo desktop */}
@@ -206,7 +221,7 @@ function ProjectRow({ p, cronograma, onEdit, onDelete, onUpdateTasks, onCreateCr
 }
 
 // ── Componente principal ──────────────────────────────────────────────────────
-export default function ProjectList({ projects, cronogramas, teamMembers, onAdd, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor }) {
+export default function ProjectList({ projects, cronogramas, teamMembers, proyectosArmar, onAdd, onEdit, onDelete, onUpdateTasks, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor }) {
   const { isMobile, isDesktop } = useBreakpoint()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('todas')
@@ -340,6 +355,7 @@ export default function ProjectList({ projects, cronogramas, teamMembers, onAdd,
             isDesktop={isDesktop}
             teamMembers={teamMembers}
             isEditor={isEditor}
+            proyectosArmar={proyectosArmar}
           />
         ))}
       </div>

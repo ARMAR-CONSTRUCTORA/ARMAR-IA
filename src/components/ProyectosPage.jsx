@@ -607,9 +607,104 @@ function EtapaAcordeon({ etapa, items, onUpdateItem }) {
   )
 }
 
+// ─── Modal vincular / crear obra ─────────────────────────────────────────────
+
+function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClose }) {
+  const [paso,   setPaso]   = useState('opciones')
+  const [obraId, setObraId] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const obrasSinProyecto = (projects || []).filter(p => !p.proyectoArmarId)
+
+  const handleCrearNueva = () => {
+    onCrearObra({
+      name:                proy.nombre              || '',
+      location:            proy.direccion            || '',
+      tipoObra:            proy.tipoObra             || '',
+      responsible:         proy.responsableObra      || '',
+      responsableProyecto: proy.responsableProyecto  || '',
+      linkDocumentacion:   proy.linkDocumentacion    || '',
+      proyectoArmarId:     proy.id,
+    })
+    onClose()
+  }
+
+  const handleVincular = async () => {
+    const obra = obrasSinProyecto.find(o => String(o.id) === obraId)
+    if (!obra) return
+    setSaving(true)
+    await onVincularObra(obra.id, proy.id)
+    setSaving(false)
+    onClose()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 310, padding: 16, backdropFilter: 'blur(2px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'white', borderRadius: 14, maxWidth: 440, width: '100%', padding: '28px 24px', boxShadow: '0 16px 48px rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 900, color: dark }}>Vincular con Obra</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#9CA3AF', padding: '2px 8px' }}>×</button>
+        </div>
+        <p style={{ fontSize: 13, color: mid, marginBottom: 20, lineHeight: 1.5 }}>
+          El proyecto <strong style={{ color: dark }}>{proy.nombre}</strong> completó todas sus etapas.
+        </p>
+
+        {paso === 'opciones' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={handleCrearNueva}
+              style={{ display: 'block', width: '100%', padding: '14px 16px', borderRadius: 9, border: `1.5px solid ${border}`, background: 'white', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = orange; e.currentTarget.style.background = '#FFF8F5' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'white' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: dark, marginBottom: 3 }}>Crear obra nueva</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>Se abre el formulario con los datos del proyecto pre-completados</div>
+            </button>
+            <button onClick={() => setPaso('vincular')}
+              style={{ display: 'block', width: '100%', padding: '14px 16px', borderRadius: 9, border: `1.5px solid ${border}`, background: 'white', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = blue; e.currentTarget.style.background = blueLight }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = border; e.currentTarget.style.background = 'white' }}>
+              <div style={{ fontWeight: 700, fontSize: 13, color: dark, marginBottom: 3 }}>Vincular obra existente</div>
+              <div style={{ fontSize: 12, color: '#9CA3AF' }}>Asociar a una obra ya cargada en el sistema</div>
+            </button>
+          </div>
+        )}
+
+        {paso === 'vincular' && (
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Seleccionar obra</label>
+              {obrasSinProyecto.length === 0 ? (
+                <p style={{ fontSize: 13, color: '#9CA3AF', padding: '8px 0' }}>No hay obras sin proyecto vinculado.</p>
+              ) : (
+                <select value={obraId} onChange={e => setObraId(e.target.value)}
+                  style={inputStyle} {...focusOrange}>
+                  <option value="">Seleccionar obra…</option>
+                  {obrasSinProyecto.map(o => (
+                    <option key={o.id} value={String(o.id)}>{o.name}{o.location ? ` — ${o.location}` : ''}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setPaso('opciones')}
+                style={{ padding: '9px 18px', borderRadius: 8, border: `1px solid ${border}`, background: 'white', color: mid, fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Volver
+              </button>
+              <button onClick={handleVincular} disabled={!obraId || saving}
+                style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: green, color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', opacity: (!obraId || saving) ? 0.6 : 1 }}>
+                {saving ? 'Vinculando…' : 'Confirmar vínculo'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Card de proyecto ─────────────────────────────────────────────────────────
 
-function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem }) {
+function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra }) {
   const estadoMeta   = ESTADO_COLORS[p.estadoGeneral] || ESTADO_COLORS['En análisis']
   const avance       = checklistItems ? calcAvanceTotal(checklistItems, p.tipoEncargo) : (p.avanceTotal ?? 0)
   const tipoLabel    = TIPOS_ENCARGO.find(t => t.value === p.tipoEncargo)?.label || p.tipoEncargo || '—'
@@ -693,6 +788,7 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
       {compuertaOk && (
         <div style={{ padding: '0 16px 12px', background: 'white' }} onClick={e => e.stopPropagation()}>
           <button
+            onClick={e => { e.stopPropagation(); onVincularObra() }}
             style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 18px', borderRadius: 8, border: 'none', background: green, color: 'white', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(45,122,79,0.3)' }}
             onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
             onMouseLeave={e => e.currentTarget.style.opacity = '1'}>
@@ -730,7 +826,7 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
-function ProyectosPage({ isEditor }) {
+function ProyectosPage({ isEditor, projects, onCrearObra, onVincularObra }) {
   const [proyectos,       setProyectos]       = useState([])
   const [loading,         setLoading]         = useState(true)
   const [showModal,       setShowModal]       = useState(false)
@@ -740,6 +836,7 @@ function ProyectosPage({ isEditor }) {
   const [checklistMap,    setChecklistMap]    = useState({})
   const [loadingCL,       setLoadingCL]       = useState({})
   const [loadedCL,        setLoadedCL]        = useState(new Set())
+  const [vincularProyecto, setVincularProyecto] = useState(null)
 
   useEffect(() => {
     loadProyectosArmar().then(data => { setProyectos(data); setLoading(false) })
@@ -850,6 +947,7 @@ function ProyectosPage({ isEditor }) {
               onToggle={handleToggle}
               isExpanded={expandedId === p.id}
               onUpdateItem={handleUpdateItem}
+              onVincularObra={() => setVincularProyecto(p)}
             />
           ))}
         </div>
@@ -861,6 +959,17 @@ function ProyectosPage({ isEditor }) {
           proy={editingProy}
           onSave={handleSave}
           onClose={() => { setShowModal(false); setEditingProy(null) }}
+        />
+      )}
+
+      {/* Modal vincular / crear obra */}
+      {vincularProyecto && (
+        <ModalVincularObra
+          proy={vincularProyecto}
+          projects={projects}
+          onCrearObra={onCrearObra}
+          onVincularObra={onVincularObra}
+          onClose={() => setVincularProyecto(null)}
         />
       )}
 

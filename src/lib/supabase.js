@@ -26,6 +26,7 @@ function fromDbProject(row) {
     arquitectoProyecto:  row.arquitecto_proyecto   || '',
     contactoArquitecto:  row.contacto_arquitecto   || '',
     linkDocumentacion:   row.link_documentacion    || '',
+    proyectoArmarId:     row.proyecto_armar_id     || null,
   }
 }
 
@@ -47,6 +48,7 @@ function toDbProject(p) {
     arquitecto_proyecto:  p.arquitectoProyecto   ?? null,
     contacto_arquitecto:  p.contactoArquitecto   ?? null,
     link_documentacion:   p.linkDocumentacion    ?? null,
+    proyecto_armar_id:    p.proyectoArmarId      || null,
   }
 }
 

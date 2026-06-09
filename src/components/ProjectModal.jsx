@@ -32,6 +32,7 @@ const EMPTY = {
   arquitectoProyecto:  '',
   contactoArquitecto:  '',
   linkDocumentacion:   '',
+  proyectoArmarId:     null,
 }
 
 function calcEndDate(startDate, valor, unidad) {
@@ -114,7 +115,7 @@ function TeamSelect({ value, onChange, teamMembers, hasError, placeholder }) {
   )
 }
 
-export default function ProjectModal({ project, teamMembers, onSave, onClose }) {
+export default function ProjectModal({ project, teamMembers, proyectosArmar, prefillData, onSave, onClose }) {
   const { isMobile, isTablet } = useBreakpoint()
   const [form, setForm]             = useState(EMPTY)
   const [errors, setErrors]         = useState({})
@@ -140,8 +141,8 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
         arquitectoProyecto:  project.arquitectoProyecto  ?? '',
         contactoArquitecto:  project.contactoArquitecto  ?? '',
         linkDocumentacion:   project.linkDocumentacion   ?? '',
+        proyectoArmarId:     project.proyectoArmarId     ?? null,
       })
-      // Recalcular duración en días desde fechas existentes
       if (project.startDate && project.endDate) {
         const start = new Date(project.startDate + 'T00:00:00')
         const end   = new Date(project.endDate   + 'T00:00:00')
@@ -152,6 +153,11 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
       }
       setDurUnd('Días')
       setMode('info')
+    } else if (prefillData) {
+      setForm({ ...EMPTY, ...prefillData })
+      setDurVal('')
+      setDurUnd('Días')
+      setMode('edit')
     } else {
       setForm(EMPTY)
       setDurVal('')
@@ -159,7 +165,7 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
       setMode('edit')
     }
     setErrors({})
-  }, [project])
+  }, [project, prefillData])
 
   const set = (key, value) => {
     setForm(f => ({ ...f, [key]: value }))
@@ -186,6 +192,19 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
     }
   }
 
+  const handleSelectProyecto = (proyId) => {
+    set('proyectoArmarId', proyId || null)
+    if (!proyId) return
+    const proy = proyectosArmar?.find(p => p.id === proyId)
+    if (!proy) return
+    if (!form.name)                set('name',                proy.nombre              || '')
+    if (!form.location)            set('location',            proy.direccion            || '')
+    if (!form.responsible)         set('responsible',         proy.responsableObra      || '')
+    if (!form.responsableProyecto) set('responsableProyecto', proy.responsableProyecto  || '')
+    if (!form.tipoObra)            set('tipoObra',            proy.tipoObra             || '')
+    if (!form.linkDocumentacion)   set('linkDocumentacion',   proy.linkDocumentacion    || '')
+  }
+
   const tieneProyectoExterno = form.tipoObra === 'Dirección + Construcción sobre proyecto externo' ||
     form.tipoObra === 'Construcción sobre proyecto externo'
 
@@ -206,7 +225,7 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
     e.preventDefault()
     const errs = validate()
     if (Object.keys(errs).length) { setErrors(errs); return }
-    onSave({ ...form, progress: Number(form.progress) })
+    onSave({ ...form, progress: Number(form.progress), proyectoArmarId: form.proyectoArmarId || null })
   }
 
   const inputStyle = (hasError) => ({
@@ -308,6 +327,19 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
               <InfoRow label="Proyecto" value={form.proyecto} />
             </div>
 
+            {/* Proyecto ARMAR vinculado — info view */}
+            {form.proyectoArmarId && proyectosArmar?.length > 0 && (() => {
+              const proy = proyectosArmar.find(p => p.id === form.proyectoArmarId)
+              return proy ? (
+                <div style={{ marginBottom: 14 }}>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6 }}>Proyecto ARMAR vinculado</p>
+                  <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 700, color: '#2563EB', background: '#EFF6FF', border: '1px solid #BFDBFE' }}>
+                    {proy.nombre}{proy.comitente ? ` (${proy.comitente})` : ''}
+                  </span>
+                </div>
+              ) : null
+            })()}
+
             {/* Estado */}
             <div style={{ marginBottom: 14 }}>
               <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6 }}>Estado</p>
@@ -395,6 +427,24 @@ export default function ProjectModal({ project, teamMembers, onSave, onClose }) 
         {/* ── MODO EDICIÓN ───────────────────────────────────────────────── */}
         {mode === 'edit' && (
           <form onSubmit={handleSubmit}>
+            {/* Proyecto ARMAR vinculado */}
+            {proyectosArmar?.length > 0 && (
+              <Field label="Proyecto ARMAR vinculado">
+                <select
+                  value={form.proyectoArmarId || ''}
+                  onChange={e => handleSelectProyecto(e.target.value || null)}
+                  style={{ ...inputStyle(false), color: form.proyectoArmarId ? 'var(--gray-800)' : 'var(--gray-400)', cursor: 'pointer' }}
+                >
+                  <option value="">Sin vincular</option>
+                  {proyectosArmar.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.nombre}{p.comitente ? ` (${p.comitente})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            )}
+
             {/* Nombre */}
             <Field label="Nombre de la obra" required error={errors.name}>
               <input

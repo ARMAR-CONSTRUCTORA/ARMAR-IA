@@ -18,6 +18,7 @@ import {
   loadProjects, upsertProject, deleteProject,
   loadCronogramasAll, upsertCronograma, deleteCronograma,
   loadTeamMembers, upsertTeamMember, deleteTeamMember,
+  loadProyectosArmar,
 } from './lib/supabase'
 
 const SESSION_KEY = 'armar-ia-user'
@@ -53,6 +54,8 @@ function App() {
   const [projects, setProjects] = useState([])
   const [teamMembers, setTeamMembers] = useState([])
   const [cronogramas, setCronogramas] = useState({})
+  const [proyectosArmar, setProyectosArmar] = useState([])
+  const [prefillProjectData, setPrefillProjectData] = useState(null)
 
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -77,10 +80,12 @@ function App() {
       loadProjects(),
       loadTeamMembers(),
       loadCronogramasAll(),
-    ]).then(([projs, team, cronos]) => {
+      loadProyectosArmar(),
+    ]).then(([projs, team, cronos, proyArmar]) => {
       setProjects(projs)
       setTeamMembers(team)
       setCronogramas(cronos)
+      setProyectosArmar(proyArmar)
       setSelectedBudgetProjectId(projs?.[0]?.id ?? null)
       setLoading(false)
     })
@@ -131,9 +136,17 @@ function App() {
     sessionStorage.removeItem(SESSION_KEY)
   }
 
-  const openAdd = () => { setEditing(null); setModalOpen(true) }
-  const openEdit = (p) => { setEditing(p); setModalOpen(true) }
-  const closeModal = () => { setModalOpen(false); setEditing(null) }
+  const openAdd = (prefill = null) => { setEditing(null); setPrefillProjectData(prefill || null); setModalOpen(true) }
+  const openEdit = (p) => { setEditing(p); setPrefillProjectData(null); setModalOpen(true) }
+  const closeModal = () => { setModalOpen(false); setEditing(null); setPrefillProjectData(null) }
+
+  const handleVincularObra = async (obraId, proyectoArmarId) => {
+    const obra = projects.find(p => String(p.id) === String(obraId))
+    if (!obra) return
+    const updated = { ...obra, proyectoArmarId }
+    setProjects(prev => prev.map(p => String(p.id) === String(obraId) ? updated : p))
+    await upsertProject(updated)
+  }
   const handleNavigate = (page) => { setActivePage(page); setMenuOpen(false) }
 
   const handleSave = async (data) => {
@@ -318,6 +331,7 @@ function App() {
             projects={projects}
             cronogramas={cronogramas}
             teamMembers={teamMembers}
+            proyectosArmar={proyectosArmar}
             onAdd={openAdd}
             onEdit={openEdit}
             onDelete={setDeleteTarget}
@@ -374,7 +388,14 @@ function App() {
         )
 
       case 'proyectos':
-        return <ProyectosPage isEditor={isEditor} />
+        return (
+          <ProyectosPage
+            isEditor={isEditor}
+            projects={projects}
+            onCrearObra={openAdd}
+            onVincularObra={handleVincularObra}
+          />
+        )
 
       case 'equipo':
         return (
@@ -439,7 +460,14 @@ function App() {
       </div>
 
       {modalOpen && isEditor && (
-        <ProjectModal project={editingProject} teamMembers={teamMembers} onSave={handleSave} onClose={closeModal} />
+        <ProjectModal
+          project={editingProject}
+          teamMembers={teamMembers}
+          proyectosArmar={proyectosArmar}
+          prefillData={prefillProjectData}
+          onSave={handleSave}
+          onClose={closeModal}
+        />
       )}
 
       {loginModalOpen && (
