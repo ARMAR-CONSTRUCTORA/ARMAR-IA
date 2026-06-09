@@ -7,6 +7,7 @@ import {
   loadChecklistItems,
   upsertChecklistItem,
   insertChecklistItems,
+  loadPresupuestosResumen,
 } from '../lib/supabase'
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
@@ -23,6 +24,12 @@ const red         = '#C0392B'
 const redLight    = '#FDECEA'
 const blue        = '#2563EB'
 const blueLight   = '#EFF6FF'
+
+const PRESUPUESTO_ESTADO_META = {
+  borrador: { label: 'Borrador', color: '#6B7280', bg: '#F3F4F6' },
+  enviado:  { label: 'Enviado',  color: orange,    bg: orangeLight },
+  aprobado: { label: 'Aprobado', color: green,      bg: greenLight },
+}
 
 // ─── Tipos y opciones ─────────────────────────────────────────────────────────
 
@@ -704,7 +711,7 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
 
 // ─── Card de proyecto ─────────────────────────────────────────────────────────
 
-function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra }) {
+function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo }) {
   const estadoMeta   = ESTADO_COLORS[p.estadoGeneral] || ESTADO_COLORS['En análisis']
   const avance       = checklistItems ? calcAvanceTotal(checklistItems, p.tipoEncargo) : (p.avanceTotal ?? 0)
   const tipoLabel    = TIPOS_ENCARGO.find(t => t.value === p.tipoEncargo)?.label || p.tipoEncargo || '—'
@@ -740,6 +747,14 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
                 {modalidad}
               </span>
             )}
+            {presupuestoInfo && (() => {
+              const pm = PRESUPUESTO_ESTADO_META[presupuestoInfo.estadoVersion] || PRESUPUESTO_ESTADO_META.borrador
+              return (
+                <span style={{ fontSize: 10, fontWeight: 700, color: pm.color, background: pm.bg, padding: '2px 9px', borderRadius: 99, flexShrink: 0 }}>
+                  Presupuesto: {pm.label}
+                </span>
+              )
+            })()}
           </div>
           <div style={{ fontSize: 11, color: '#6B7280', lineHeight: 1.6 }}>
             {[p.comitente, p.direccion || p.zona, p.tipoObra].filter(Boolean).join(' · ')}
@@ -836,10 +851,17 @@ function ProyectosPage({ isEditor, projects, onCrearObra, onVincularObra }) {
   const [checklistMap,    setChecklistMap]    = useState({})
   const [loadingCL,       setLoadingCL]       = useState({})
   const [loadedCL,        setLoadedCL]        = useState(new Set())
-  const [vincularProyecto, setVincularProyecto] = useState(null)
+  const [vincularProyecto,  setVincularProyecto]  = useState(null)
+  const [presupuestosMap,   setPresupuestosMap]   = useState({})
 
   useEffect(() => {
-    loadProyectosArmar().then(data => { setProyectos(data); setLoading(false) })
+    Promise.all([loadProyectosArmar(), loadPresupuestosResumen()]).then(([data, presups]) => {
+      setProyectos(data)
+      const map = {}
+      presups.forEach(p => { map[p.proyectoArmarId] = p })
+      setPresupuestosMap(map)
+      setLoading(false)
+    })
   }, [])
 
   const handleToggle = async (id) => {
@@ -948,6 +970,7 @@ function ProyectosPage({ isEditor, projects, onCrearObra, onVincularObra }) {
               isExpanded={expandedId === p.id}
               onUpdateItem={handleUpdateItem}
               onVincularObra={() => setVincularProyecto(p)}
+              presupuestoInfo={presupuestosMap[p.id] || null}
             />
           ))}
         </div>

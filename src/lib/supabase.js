@@ -94,6 +94,7 @@ function fromDbPresupuesto(row) {
     aprobadoPor:       row.aprobado_por || '',
     esVersionVigente:  row.es_version_vigente ?? true,
     usdRate:           Number(row.usd_rate || 1250),
+    proyectoArmarId:   row.proyecto_armar_id  || null,
 
     capitulos: (row.presupuesto_capitulos || [])
       .sort((a, b) => (a.orden ?? 0) - (b.orden ?? 0))
@@ -557,6 +558,28 @@ export async function eliminarGastoGeneral(id) {
     .eq('id', id)
 
   if (error) console.error('eliminarGastoGeneral:', error)
+}
+
+export async function vincularPresupuestoAProyecto(presupuestoId, proyectoArmarId) {
+  const { error } = await supabase
+    .from('presupuestos')
+    .update({ proyecto_armar_id: proyectoArmarId || null })
+    .eq('id', presupuestoId)
+  if (error) console.error('vincularPresupuestoAProyecto:', error)
+}
+
+export async function loadPresupuestosResumen() {
+  const { data, error } = await supabase
+    .from('presupuestos')
+    .select('id, proyecto_armar_id, estado_version')
+    .not('proyecto_armar_id', 'is', null)
+    .eq('es_version_vigente', true)
+  if (error) { console.error('loadPresupuestosResumen:', error); return [] }
+  return (data || []).map(r => ({
+    id:              r.id,
+    proyectoArmarId: r.proyecto_armar_id,
+    estadoVersion:   r.estado_version || 'borrador',
+  }))
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────

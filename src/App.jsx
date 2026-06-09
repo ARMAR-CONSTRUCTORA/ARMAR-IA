@@ -378,7 +378,7 @@ function App() {
             </div>
 
             {selectedBudgetProject ? (
-              <PresupuestosTab proyecto={selectedBudgetProject} isEditor={isEditor} />
+              <PresupuestosTab proyecto={selectedBudgetProject} isEditor={isEditor} proyectosArmar={proyectosArmar} />
             ) : (
               <div style={{ background: 'white', padding: 24, borderRadius: 16 }}>
                 No hay obras cargadas para presupuestar.

@@ -8,6 +8,10 @@ import {
   actualizarItem,
   eliminarItem,
   eliminarCapitulo,
+  updatePresupuestoEstado,
+  vincularPresupuestoAProyecto,
+  loadChecklistItems,
+  upsertChecklistItem,
 } from "../lib/supabase";
 
 const UNIDADES = ["GLOBAL", "UNIDAD", "M2", "M3"];
@@ -21,6 +25,15 @@ const dark = "#1A1A1A";
 const mid = "#444";
 const light = "#F7F7F5";
 const border = "#E0DDD8";
+
+const blue      = "#2563EB";
+const blueLight = "#EFF6FF";
+
+const ESTADO_META = {
+  borrador: { label: 'Borrador',          color: '#6B7280', bg: '#F3F4F6', nextEstado: 'enviado',  nextLabel: 'Marcar como enviado' },
+  enviado:  { label: 'Enviado al cliente', color: orange,   bg: '#FFF3EB', nextEstado: 'aprobado', nextLabel: 'Aprobar presupuesto' },
+  aprobado: { label: 'Aprobado',           color: green,    bg: '#EBF7F1', nextEstado: null,       nextLabel: null },
+};
 
 function formatMoney(n) {
   const value = Number(n || 0);
@@ -338,11 +351,13 @@ function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAd
   );
 }
 
-export default function PresupuestosTab({ proyecto }) {
+export default function PresupuestosTab({ proyecto, proyectosArmar, isEditor }) {
   const proyectoId = proyecto?.id;
-  const [loading, setLoading] = useState(true);
-  const [presupuesto, setPresupuesto] = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [presupuesto,  setPresupuesto]  = useState(null);
   const [nuevoCapitulo, setNuevoCapitulo] = useState("");
+  const [vincularOpen, setVincularOpen] = useState(false);
+  const [toast,        setToast]        = useState('');
 
   async function cargar() {
     if (!proyectoId) {
@@ -422,7 +437,45 @@ export default function PresupuestosTab({ proyecto }) {
     await cargar();
   }
 
+  async function handleEstado(nuevoEstado) {
+    if (!presupuesto?.id) return;
+    await updatePresupuestoEstado(presupuesto.id, nuevoEstado);
+    setPresupuesto(prev => ({ ...prev, estadoVersion: nuevoEstado }));
+
+    if (nuevoEstado === 'aprobado' && presupuesto.proyectoArmarId) {
+      try {
+        const items = await loadChecklistItems(presupuesto.proyectoArmarId);
+        const aActualizar = items.filter(it =>
+          it.estado !== 'aprobado' && (
+            it.titulo.toLowerCase().includes('presupuesto aprobado') ||
+            it.titulo.toLowerCase().includes('presupuesto de obra completo') ||
+            it.titulo.toLowerCase().includes('presupuesto final')
+          )
+        );
+        if (aActualizar.length > 0) {
+          await Promise.all(aActualizar.map(it => upsertChecklistItem({ ...it, estado: 'aprobado' })));
+          setToast('✓ Checklist del proyecto actualizado');
+          setTimeout(() => setToast(''), 3500);
+        }
+      } catch (err) {
+        console.error('handleEstado checklist:', err);
+      }
+    }
+  }
+
+  async function handleVincularProyecto(proyArmarId) {
+    if (!presupuesto?.id || !proyArmarId) return;
+    await vincularPresupuestoAProyecto(presupuesto.id, proyArmarId);
+    setPresupuesto(prev => ({ ...prev, proyectoArmarId: proyArmarId }));
+    setVincularOpen(false);
+  }
+
   if (loading) return <div style={s.page}>Cargando presupuesto...</div>;
+
+  const estadoActual = presupuesto?.estadoVersion || 'borrador';
+  const estadoMeta   = ESTADO_META[estadoActual] || ESTADO_META.borrador;
+
+  const proyectoProy = proyectosArmar?.find(p => p.id === presupuesto?.proyectoArmarId);
 
   return (
     <div style={s.page}>
@@ -430,10 +483,67 @@ export default function PresupuestosTab({ proyecto }) {
         <div>
           <div style={s.title}>Presupuesto</div>
           <div style={s.subtitle}>
-            {proyecto?.name || proyecto?.nombre || "Obra"} · Versión {presupuesto?.numeroVersion || presupuesto?.numero_version || 1} · {presupuesto?.estadoVersion || presupuesto?.estado_version || "borrador"}
+            {proyecto?.name || proyecto?.nombre || "Obra"} · v{presupuesto?.numeroVersion || 1}
+          </div>
+
+          {/* Badge proyecto ARMAR vinculado / botón vincular */}
+          <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {proyectoProy ? (
+              <span style={{ fontSize: 12, fontWeight: 700, color: blue, background: blueLight, padding: '3px 10px', borderRadius: 99, border: '1px solid #BFDBFE' }}>
+                {proyectoProy.nombre}{proyectoProy.comitente ? ` (${proyectoProy.comitente})` : ''}
+              </span>
+            ) : proyectosArmar?.length > 0 ? (
+              vincularOpen ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <select
+                    defaultValue=""
+                    onChange={e => { if (e.target.value) handleVincularProyecto(e.target.value) }}
+                    style={{ ...s.select, width: 'auto', minWidth: 240, fontSize: 12 }}
+                    autoFocus
+                  >
+                    <option value="" disabled>Seleccionar proyecto…</option>
+                    {proyectosArmar.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.nombre}{p.comitente ? ` (${p.comitente})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button onClick={() => setVincularOpen(false)} style={{ ...s.btnIcon, color: '#9CA3AF', fontSize: 16 }}>✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setVincularOpen(true)}
+                  style={{ fontSize: 11, fontWeight: 700, color: blue, background: blueLight, padding: '3px 10px', borderRadius: 99, border: `1px solid #BFDBFE`, cursor: 'pointer', fontFamily: 'inherit' }}
+                >
+                  + Vincular proyecto
+                </button>
+              )
+            ) : null}
           </div>
         </div>
+
+        {/* Estado + botón avanzar */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: estadoMeta.color, background: estadoMeta.bg, padding: '4px 12px', borderRadius: 99, border: `1px solid ${estadoMeta.color}22` }}>
+            {estadoMeta.label}
+          </span>
+          {estadoMeta.nextEstado && isEditor && (
+            <button
+              onClick={() => handleEstado(estadoMeta.nextEstado)}
+              style={{ ...s.btnPrimary, fontSize: 12, padding: '6px 14px', background: estadoActual === 'enviado' ? green : orange }}
+            >
+              {estadoMeta.nextLabel}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Toast */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 28, right: 28, zIndex: 400, background: green, color: 'white', padding: '12px 20px', borderRadius: 10, fontSize: 13, fontWeight: 700, boxShadow: '0 4px 20px rgba(45,122,79,0.35)', pointerEvents: 'none' }}>
+          {toast}
+        </div>
+      )}
 
       <div style={{ padding: "16px 24px 0" }}>
         <div style={s.cards}>
