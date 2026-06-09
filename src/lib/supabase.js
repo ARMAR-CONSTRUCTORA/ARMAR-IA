@@ -590,3 +590,161 @@ export async function crearUsuario(nombre, password) {
 
   return { id: data.id, nombre: data.nombre }
 }
+
+// ── Proyectos ARMAR ───────────────────────────────────────────────────────────
+
+function fromDbProyectoArmar(row) {
+  return {
+    id:                          row.id,
+    nombre:                      row.nombre                        || '',
+    comitente:                   row.comitente                     || '',
+    telefonoComitente:           row.telefono_comitente            || '',
+    emailComitente:              row.email_comitente               || '',
+    direccion:                   row.direccion                     || '',
+    zona:                        row.zona                          || '',
+    tipoEncargo:                 row.tipo_encargo                  || '',
+    tipoObra:                    row.tipo_obra                     || '',
+    estadoGeneral:               row.estado_general                || 'En análisis',
+    fechaInicio:                 row.fecha_inicio                  || '',
+    fechaObjetivo:               row.fecha_objetivo                || '',
+    responsableArmar:            row.responsable_armar             || '',
+    responsableProyecto:         row.responsable_proyecto          || '',
+    responsableObra:             row.responsable_obra              || '',
+    responsableAdmin:            row.responsable_admin             || '',
+    arquitectoExterno:           row.arquitecto_externo            || '',
+    contactoArquitectoExterno:   row.contacto_arquitecto_externo   || '',
+    linkDocumentacion:           row.link_documentacion            || '',
+    avanceTotal:                 row.avance_total                  ?? 0,
+  }
+}
+
+function toDbProyectoArmar(p) {
+  return {
+    id:                          p.id,
+    nombre:                      p.nombre                        ?? null,
+    comitente:                   p.comitente                     ?? null,
+    telefono_comitente:          p.telefonoComitente             ?? null,
+    email_comitente:             p.emailComitente                ?? null,
+    direccion:                   p.direccion                     ?? null,
+    zona:                        p.zona                          ?? null,
+    tipo_encargo:                p.tipoEncargo                   ?? null,
+    tipo_obra:                   p.tipoObra                      ?? null,
+    estado_general:              p.estadoGeneral                 || 'En análisis',
+    fecha_inicio:                p.fechaInicio                   || null,
+    fecha_objetivo:              p.fechaObjetivo                 || null,
+    responsable_armar:           p.responsableArmar              ?? null,
+    responsable_proyecto:        p.responsableProyecto           ?? null,
+    responsable_obra:            p.responsableObra               ?? null,
+    responsable_admin:           p.responsableAdmin              ?? null,
+    arquitecto_externo:          p.arquitectoExterno             ?? null,
+    contacto_arquitecto_externo: p.contactoArquitectoExterno     ?? null,
+    link_documentacion:          p.linkDocumentacion             ?? null,
+    avance_total:                p.avanceTotal                   ?? 0,
+  }
+}
+
+function fromDbChecklistItem(row) {
+  return {
+    id:            row.id,
+    proyectoArmarId: row.proyecto_armar_id,
+    etapa:         row.etapa         || '',
+    titulo:        row.titulo        || '',
+    descripcion:   row.descripcion   || '',
+    obligatorio:   row.obligatorio   ?? false,
+    aplica:        row.aplica        ?? true,
+    estado:        row.estado        || 'no_iniciado',
+    responsable:   row.responsable   || '',
+    fechaObjetivo: row.fecha_objetivo || '',
+    observaciones: row.observaciones || '',
+    linkAdjunto:   row.link_adjunto  || '',
+    fechaCierre:   row.fecha_cierre  || '',
+    peso:          row.peso          ?? 1,
+    orden:         row.orden         ?? 0,
+  }
+}
+
+function toDbChecklistItem(item) {
+  const out = {
+    proyecto_armar_id: item.proyectoArmarId,
+    etapa:            item.etapa         || '',
+    titulo:           item.titulo        || '',
+    descripcion:      item.descripcion   || '',
+    obligatorio:      item.obligatorio   ?? false,
+    aplica:           item.aplica        ?? true,
+    estado:           item.estado        || 'no_iniciado',
+    responsable:      item.responsable   || '',
+    fecha_objetivo:   item.fechaObjetivo || null,
+    observaciones:    item.observaciones || '',
+    link_adjunto:     item.linkAdjunto   || '',
+    fecha_cierre:     item.fechaCierre   || null,
+    peso:             item.peso          ?? 1,
+    orden:            item.orden         ?? 0,
+  }
+  if (item.id !== undefined) out.id = item.id
+  return out
+}
+
+export async function loadProyectosArmar() {
+  const { data, error } = await supabase
+    .from('proyectos_armar')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) { console.error('loadProyectosArmar:', error); return [] }
+  return (data || []).map(fromDbProyectoArmar)
+}
+
+export async function upsertProyectoArmar(proyecto) {
+  const { data, error } = await supabase
+    .from('proyectos_armar')
+    .upsert(toDbProyectoArmar(proyecto))
+    .select()
+    .single()
+  if (error) { console.error('upsertProyectoArmar:', error); return null }
+  return fromDbProyectoArmar(data)
+}
+
+export async function deleteProyectoArmar(id) {
+  const { error } = await supabase.from('proyectos_armar').delete().eq('id', id)
+  if (error) console.error('deleteProyectoArmar:', error)
+}
+
+export async function loadChecklistItems(proyectoArmarId) {
+  const { data, error } = await supabase
+    .from('proyecto_checklist_items')
+    .select('*')
+    .eq('proyecto_armar_id', proyectoArmarId)
+    .order('orden')
+  if (error) { console.error('loadChecklistItems:', error); return [] }
+  return (data || []).map(fromDbChecklistItem)
+}
+
+export async function upsertChecklistItem(item) {
+  const { data, error } = await supabase
+    .from('proyecto_checklist_items')
+    .upsert(toDbChecklistItem(item))
+    .select()
+    .single()
+  if (error) { console.error('upsertChecklistItem:', error); return null }
+  return fromDbChecklistItem(data)
+}
+
+export async function deleteChecklistItem(id) {
+  const { error } = await supabase.from('proyecto_checklist_items').delete().eq('id', id)
+  if (error) console.error('deleteChecklistItem:', error)
+}
+
+export async function insertChecklistItems(items) {
+  if (!items.length) return []
+  const payload = items.map(toDbChecklistItem)
+  console.log('[insertChecklistItems] inserting', payload.length, 'items, proyecto_armar_id:', payload[0]?.proyecto_armar_id)
+  const { data, error } = await supabase
+    .from('proyecto_checklist_items')
+    .insert(payload)
+    .select()
+  if (error) {
+    console.error('[insertChecklistItems] ERROR:', error.message, error.details, error.hint, error.code)
+    return []
+  }
+  console.log('[insertChecklistItems] OK — insertados:', data?.length)
+  return (data || []).map(fromDbChecklistItem)
+}
