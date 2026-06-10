@@ -12,6 +12,7 @@ import ProyectosPage from './components/ProyectosPage'
 import CalendarioPage from './components/CalendarioPage'
 import LoginModal from './components/LoginModal'
 import PresupuestosTab from './components/PresupuestosTab'
+import Toast from './components/Toast'
 
 import {
   supabase,
@@ -62,6 +63,9 @@ function App() {
   const [presupuestos,      setPresupuestos]      = useState([])
   const [obraHitos,         setObraHitos]         = useState([])
   const [prefillProjectData, setPrefillProjectData] = useState(null)
+  const [toast, setToast] = useState(null)
+
+  const notifyError = (msg) => setToast({ message: msg, type: 'error' })
 
   const [currentUser, setCurrentUser] = useState(() => {
     try {
@@ -139,6 +143,12 @@ function App() {
     return () => clearInterval(id)
   }, [])
 
+  useEffect(() => {
+    if (!toast) return
+    const id = setTimeout(() => setToast(null), 5000)
+    return () => clearTimeout(id)
+  }, [toast])
+
   useEffect(() => { if (isDesktop) setMenuOpen(false) }, [isDesktop])
 
   useEffect(() => {
@@ -195,6 +205,8 @@ function App() {
         const idx = prev.findIndex(h => h.id === saved.id)
         return idx >= 0 ? prev.map(h => h.id === saved.id ? saved : h) : [...prev, saved]
       })
+    } else {
+      notifyError('No se pudo guardar el hito. Los cambios no se guardaron, intentá de nuevo.')
     }
 
     if (hitoConId.visibleCalendario) {
@@ -232,13 +244,15 @@ function App() {
     if (editingProject) {
       const updated = { ...data, id: editingProject.id }
       setProjects(prev => prev.map(p => p.id === editingProject.id ? updated : p))
-      await upsertProject(updated)
+      const result = await upsertProject(updated)
+      if (!result) notifyError('No se pudo guardar la obra. Los cambios no se guardaron, intentá de nuevo.')
     } else {
       const newId = Date.now()
       const project = { ...data, id: newId, tasks: data.tasks || [], progress: data.progress ?? 0 }
       setProjects(prev => [...prev, project])
       setSelectedBudgetProjectId(prev => prev ?? newId)
-      await upsertProject(project)
+      const result = await upsertProject(project)
+      if (!result) notifyError('No se pudo guardar la obra. Los cambios no se guardaron, intentá de nuevo.')
     }
     closeModal()
   }
@@ -275,7 +289,8 @@ function App() {
       [projectId]: [...(prev[projectId] || []), cronograma],
     }))
 
-    await upsertCronograma(cronograma)
+    const result = await upsertCronograma(cronograma)
+    if (!result?.success) notifyError('No se pudo guardar el cronograma.')
   }
 
   const handleDeleteCronograma = async (projectId, cronId) => {
@@ -284,7 +299,8 @@ function App() {
       [projectId]: (prev[projectId] || []).filter(c => c.id !== cronId),
     }))
 
-    await deleteCronograma(cronId)
+    const result = await deleteCronograma(cronId)
+    if (!result?.success) notifyError('No se pudo eliminar el cronograma.')
   }
 
   const handleSaveCronograma = async (projectId, cronId, updates) => {
@@ -298,7 +314,8 @@ function App() {
       [projectId]: (prev[projectId] || []).map(c => c.id === cronId ? updated : c),
     }))
 
-    await upsertCronograma(updated)
+    const result = await upsertCronograma(updated)
+    if (!result?.success) notifyError('No se pudo guardar el cronograma. Los cambios no se guardaron, intentá de nuevo.')
   }
 
   const handleCargarAvance = async (projectId, cronId, informe, tareasActualizadas, certData) => {
@@ -331,10 +348,13 @@ function App() {
 
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
 
-    await Promise.all([
+    const [cronResult, projResult] = await Promise.all([
       upsertCronograma(updatedCron),
-      updatedProject ? upsertProject({ ...updatedProject, progress: nuevoAvance }) : Promise.resolve(),
+      updatedProject ? upsertProject({ ...updatedProject, progress: nuevoAvance }) : Promise.resolve(true),
     ])
+    if (!cronResult?.success || !projResult) {
+      notifyError('No se pudo guardar el informe de avance. Los cambios no se guardaron, intentá de nuevo.')
+    }
   }
 
   const handleEditarInforme = async (projectId, cronId, informeId, updatedInforme, tareasActualizadas) => {
@@ -366,10 +386,13 @@ function App() {
 
     setProjects(prev => prev.map(p => p.id === projectId ? { ...p, progress: nuevoAvance } : p))
 
-    await Promise.all([
+    const [cronResult, projResult] = await Promise.all([
       upsertCronograma(updatedCron),
-      updatedProject ? upsertProject({ ...updatedProject, progress: nuevoAvance }) : Promise.resolve(),
+      updatedProject ? upsertProject({ ...updatedProject, progress: nuevoAvance }) : Promise.resolve(true),
     ])
+    if (!cronResult?.success || !projResult) {
+      notifyError('No se pudo guardar el informe. Los cambios no se guardaron, intentá de nuevo.')
+    }
   }
 
   const handleAddMember = async (name, category) => {
@@ -496,6 +519,7 @@ function App() {
             onCrearObra={openAdd}
             onVincularObra={handleVincularObra}
             onNavigate={handleNavigate}
+            onError={notifyError}
           />
         )
 
@@ -575,6 +599,8 @@ function App() {
       {loginModalOpen && (
         <LoginModal onLogin={handleLogin} onClose={() => setLoginModalOpen(false)} />
       )}
+
+      {toast && <Toast message={toast.message} type={toast.type} />}
 
       {deleteTarget !== null && (
         <div

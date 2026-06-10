@@ -235,7 +235,8 @@ export async function loadProjects() {
 
 export async function upsertProject(project) {
   const { error } = await supabase.from('projects').upsert(toDbProject(project))
-  if (error) console.error('upsertProject:', error)
+  if (error) { console.error('upsertProject:', error); return null }
+  return { success: true }
 }
 
 export async function deleteProject(id) {
@@ -260,12 +261,14 @@ export async function loadCronogramasAll() {
 
 export async function upsertCronograma(cronograma) {
   const { error } = await supabase.from('cronogramas').upsert(toDbCronograma(cronograma))
-  if (error) console.error('upsertCronograma:', error)
+  if (error) { console.error('upsertCronograma:', error); return { success: false, error } }
+  return { success: true }
 }
 
 export async function deleteCronograma(id) {
   const { error } = await supabase.from('cronogramas').delete().eq('id', id)
-  if (error) console.error('deleteCronograma:', error)
+  if (error) { console.error('deleteCronograma:', error); return { success: false, error } }
+  return { success: true }
 }
 
 // ── Team members ──────────────────────────────────────────────────────────────

@@ -229,7 +229,7 @@ function StatsPanel({ tareas, avanceGeneral, informes, certificados }) {
   )
 }
 
-function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, ppd, onZoomChange, certificados }) {
+function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, onAddEtapa, ppd, onZoomChange, certificados }) {
   const scrollRef = useRef()
   const [expandedEtapas, setExpandedEtapas] = useState(new Set(tareas.filter(t => t.parentId === null).map(t => t.id)))
 
@@ -514,6 +514,11 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
               </div>
             )
           })}
+          {structuralMode && (
+            <div style={{ display: 'flex', alignItems: 'center', paddingLeft: 10, height: 30, borderBottom: '1px solid var(--gray-200)', background: 'white' }}>
+              <button onClick={() => onAddEtapa()} style={{ fontSize: 11, color: orange, fontWeight: 700, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>+ Nueva etapa</button>
+            </div>
+          )}
           {(() => {
             const visibleRows = []
             etapas.forEach(etapa => {
@@ -1515,6 +1520,16 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     dependeDeId: null, tipoVinculo: 'Fin a inicio', desfaseDias: 0, esCritica: false, adicionales: [],
   })
 
+  const handleAddEtapa = () => {
+    const fechaInicioSugerida = tareas.reduce((max, t) => (t.fechaFin && t.fechaFin > max) ? t.fechaFin : max, '') || new Date().toISOString().slice(0, 10)
+    setEditingTarea({
+      id: null, parentId: null, obraId: project.id,
+      nombre: '', tipo: 'etapa', fechaInicio: fechaInicioSugerida,
+      duracionDias: 5, pesoRelativo: 0, avanceActual: 0, estado: 'Pendiente',
+      dependeDeId: null, tipoVinculo: 'Fin a inicio', desfaseDias: 0, esCritica: false, adicionales: [],
+    })
+  }
+
   const handleEditarInformeLocal = (updatedInforme, tareasActualizadas) =>
     onEditarInforme(project.id, cronograma.id, updatedInforme.id, updatedInforme, tareasActualizadas)
 
@@ -1661,6 +1676,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
             onClickTarea={isEditor ? setEditingTarea : () => {}}
             onDeleteTarea={handleDeleteTarea}
             onAddSubtarea={handleAddSubtarea}
+            onAddEtapa={handleAddEtapa}
             ppd={ppd}
             onZoomChange={setZoomIdx}
             certificados={certificados}

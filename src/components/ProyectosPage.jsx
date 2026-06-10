@@ -865,7 +865,7 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 
-function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincularObra, onNavigate }) {
+function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincularObra, onNavigate, onError }) {
   const [proyectos,       setProyectos]       = useState([])
   const [loading,         setLoading]         = useState(true)
   const [showModal,       setShowModal]       = useState(false)
@@ -907,6 +907,7 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
     if (editingProy) {
       const updated = await upsertProyectoArmar({ ...editingProy, ...data })
       if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
+      else onError?.('No se pudo guardar el proyecto. Los cambios no se guardaron, intentá de nuevo.')
     } else {
       const created = await upsertProyectoArmar(data)
       console.log('[handleSave] proyecto creado:', created?.id, created?.tipoEncargo)
@@ -928,6 +929,8 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
           fecha:      created.fechaInicio || new Date().toISOString().slice(0, 10),
           estado:     'pendiente',
         })
+      } else {
+        onError?.('No se pudo guardar el proyecto. Los cambios no se guardaron, intentá de nuevo.')
       }
     }
     setShowModal(false)
