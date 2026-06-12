@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useBreakpoint } from '../hooks/useBreakpoint'
 import CronogramaTab from './CronogramaTab'
+import ModalDetalleHito, { CHECKLIST_ITEMS, CHECKLIST_META, semaforoHito, estadoDesdeChecklist } from './ModalDetalleHito'
 
 // ── Colores ───────────────────────────────────────────────────────────────────
 const orange = '#E8641A', orangeLight = '#FFF3EB'
@@ -14,15 +15,6 @@ const STATUS = {
   activa:    { label: 'Activa',    color: '#059669', bg: '#D1FAE5', border: '#6EE7B7' },
   terminada: { label: 'Terminada', color: '#2563EB', bg: '#DBEAFE', border: '#93C5FD' },
   atrasada:  { label: 'Atrasada',  color: '#DC2626', bg: '#FEE2E2', border: '#FCA5A5' },
-}
-
-// ── Estado hito ───────────────────────────────────────────────────────────────
-const ESTADO_HITO_META = {
-  pendiente:    { label: 'Pendiente',    color: '#6B7280', bg: '#F3F4F6' },
-  cumplido:     { label: 'Cumplido',     color: green,     bg: greenLight },
-  demorado:     { label: 'Demorado',     color: red,       bg: redLight },
-  reprogramado: { label: 'Reprogramado', color: orange,    bg: orangeLight },
-  cancelado:    { label: 'Cancelado',    color: '#4B5563', bg: '#F3F4F6', strike: true },
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -130,6 +122,7 @@ const card = { background: 'white', border: `1px solid ${border}`, borderRadius:
 
 // ── Pestaña: Resumen ──────────────────────────────────────────────────────────
 function TabResumen({ p, cronograma, proyectosArmar, isDesktop, obraHitos }) {
+  const [hitoDetalle, setHitoDetalle] = useState(null)
   const proyVinc = proyectosArmar?.find(pa => String(pa.id) === String(p.proyectoArmarId))
   const today    = new Date().toISOString().slice(0, 10)
   const plazo    = !p.endDate ? 'sin_fechas' : p.endDate >= today ? 'en_plazo' : 'con_desvio'
@@ -149,7 +142,7 @@ function TabResumen({ p, cronograma, proyectosArmar, isDesktop, obraHitos }) {
   const ultimoCron = cronograma.at(-1)
 
   const proximoHito = (obraHitos || [])
-    .filter(h => h.obraId === p.id && h.estado === 'pendiente')
+    .filter(h => h.obraId === p.id && h.estado !== 'cumplido')
     .sort((a, b) => (a.fechaPrevista || '').localeCompare(b.fechaPrevista || ''))[0]
 
   return (
@@ -249,17 +242,21 @@ function TabResumen({ p, cronograma, proyectosArmar, isDesktop, obraHitos }) {
       <div style={card}>
         <p style={{ fontSize: 10, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>Próximo hito</p>
         {proximoHito ? (
-          <>
+          <div style={{ cursor: 'pointer' }} onClick={() => setHitoDetalle(proximoHito)}>
             <div style={{ fontSize: 14, fontWeight: 800, color: dark, marginBottom: 8 }}>{proximoHito.nombre}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <Badge label={fmtFecha(proximoHito.fechaPrevista)} color={orange} bg={orangeLight} />
             </div>
             <InfoRow label="Responsable" value={proximoHito.responsable} />
-          </>
+          </div>
         ) : (
           <p style={{ fontSize: 12, color: '#9CA3AF' }}>Sin hitos pendientes.</p>
         )}
       </div>
+
+      {hitoDetalle && (
+        <ModalDetalleHito hito={hitoDetalle} obra={p} onClose={() => setHitoDetalle(null)} />
+      )}
     </div>
   )
 }
@@ -477,29 +474,38 @@ function Field({ label, children }) {
   )
 }
 
-function ModalHito({ obraId, onSave, onClose }) {
-  const [nombre, setNombre]                   = useState('')
-  const [descripcion, setDescripcion]         = useState('')
-  const [fechaPrevista, setFechaPrevista]     = useState('')
-  const [responsable, setResponsable]         = useState('')
-  const [impactoSiDemora, setImpactoSiDemora] = useState('')
-  const [visibleCalendario, setVisibleCalendario] = useState(true)
-  const [observaciones, setObservaciones]     = useState('')
+const selectStyle = { ...inputStyle, cursor: 'pointer', background: 'white' }
+
+function ModalHito({ obraId, hito, onSave, onClose }) {
+  const esEdicion = !!hito?.id
+  const [nombre, setNombre]               = useState(hito?.nombre || '')
+  const [descripcion, setDescripcion]     = useState(hito?.descripcion || '')
+  const [fechaPrevista, setFechaPrevista] = useState(hito?.fechaPrevista || '')
+  const [proveedor, setProveedor]         = useState(hito?.proveedor || '')
+  const [checklistDocumentacion, setChecklistDocumentacion] = useState(hito?.checklistDocumentacion || 'pendiente')
+  const [checklistPresupuesto, setChecklistPresupuesto]     = useState(hito?.checklistPresupuesto || 'pendiente')
+  const [checklistPago, setChecklistPago]                   = useState(hito?.checklistPago || 'pendiente')
 
   const puedeGuardar = nombre.trim() && fechaPrevista
 
   const handleGuardar = () => {
     if (!puedeGuardar) return
+    const checklist = { checklistDocumentacion, checklistPresupuesto, checklistPago }
     onSave({
+      ...(esEdicion ? { id: hito.id } : {}),
       obraId,
+      cronogramaId: hito?.cronogramaId || null,
       nombre: nombre.trim(),
       descripcion: descripcion.trim(),
       fechaPrevista,
-      responsable: responsable.trim(),
-      impactoSiDemora: impactoSiDemora.trim(),
-      visibleCalendario,
-      observaciones: observaciones.trim(),
-      estado: 'pendiente',
+      proveedor: proveedor.trim(),
+      ...checklist,
+      estado: estadoDesdeChecklist(checklist),
+      fechaReal: hito?.fechaReal || null,
+      responsable: hito?.responsable || '',
+      impactoSiDemora: hito?.impactoSiDemora || '',
+      observaciones: hito?.observaciones || '',
+      visibleCalendario: true,
     })
     onClose()
   }
@@ -510,31 +516,41 @@ function ModalHito({ obraId, onSave, onClose }) {
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div style={{ background: 'white', borderRadius: 14, padding: 24, maxWidth: 480, width: '100%', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h3 style={{ fontSize: 16, fontWeight: 800, color: dark, marginBottom: 16 }}>Nuevo hito</h3>
+        <h3 style={{ fontSize: 16, fontWeight: 800, color: dark, marginBottom: 16 }}>{esEdicion ? 'Editar hito' : 'Nuevo hito'}</h3>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <Field label="Nombre *">
+          <Field label="Nombre del hito *">
             <input value={nombre} onChange={e => setNombre(e.target.value)} style={inputStyle} />
           </Field>
           <Field label="Descripción">
             <textarea value={descripcion} onChange={e => setDescripcion(e.target.value)} style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} />
           </Field>
-          <Field label="Fecha prevista *">
+          <Field label="Fecha del hito *">
             <input type="date" value={fechaPrevista} onChange={e => setFechaPrevista(e.target.value)} style={inputStyle} />
           </Field>
-          <Field label="Responsable">
-            <input value={responsable} onChange={e => setResponsable(e.target.value)} style={inputStyle} />
+          <Field label="Proveedor">
+            <input value={proveedor} onChange={e => setProveedor(e.target.value)} placeholder="Nombre del proveedor o empresa" style={inputStyle} />
           </Field>
-          <Field label="Impacto si demora">
-            <input value={impactoSiDemora} onChange={e => setImpactoSiDemora(e.target.value)} style={inputStyle} />
-          </Field>
-          <Field label="Observaciones">
-            <textarea value={observaciones} onChange={e => setObservaciones(e.target.value)} style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }} />
-          </Field>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: mid, cursor: 'pointer' }}>
-            <input type="checkbox" checked={visibleCalendario} onChange={e => setVisibleCalendario(e.target.checked)} />
-            Mostrar en calendario
-          </label>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>Checklist</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {[
+                { label: 'Documentación / información asociada', value: checklistDocumentacion, set: setChecklistDocumentacion },
+                { label: 'Presupuesto aprobado',                  value: checklistPresupuesto,   set: setChecklistPresupuesto },
+                { label: 'Pago',                                  value: checklistPago,          set: setChecklistPago },
+              ].map(item => (
+                <div key={item.label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ flex: 1, fontSize: 12, color: dark }}>{item.label}</span>
+                  <select value={item.value} onChange={e => item.set(e.target.value)} style={{ ...selectStyle, width: 140, flexShrink: 0 }}>
+                    <option value="pendiente">Pendiente</option>
+                    <option value="en_proceso">En proceso</option>
+                    <option value="listo">Listo</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 20 }}>
@@ -549,7 +565,7 @@ function ModalHito({ obraId, onSave, onClose }) {
             disabled={!puedeGuardar}
             style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: puedeGuardar ? orange : '#FBC8AD', color: 'white', fontWeight: 700, fontSize: 13, cursor: puedeGuardar ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}
           >
-            Guardar hito
+            {esEdicion ? 'Guardar cambios' : 'Guardar hito'}
           </button>
         </div>
       </div>
@@ -557,26 +573,24 @@ function ModalHito({ obraId, onSave, onClose }) {
   )
 }
 
-function TabHitos({ p, obraHitos, onGuardarHito, onEliminarHito, onMarcarHitoCumplido, isEditor }) {
-  const [modalOpen, setModalOpen] = useState(false)
+function TabHitos({ p, obraHitos, onGuardarHito, onEliminarHito, isEditor }) {
+  const [modalOpen, setModalOpen]     = useState(false)
+  const [editingHito, setEditingHito] = useState(null)
+  const [hitoDetalle, setHitoDetalle] = useState(null)
 
   const hitos = (obraHitos || [])
     .filter(h => h.obraId === p.id)
     .sort((a, b) => (a.fechaPrevista || '').localeCompare(b.fechaPrevista || ''))
 
-  const handleMarcarCumplido = (hito) => {
-    const hoy = new Date().toISOString().slice(0, 10)
-    const fechaReal = window.prompt('Fecha real de cumplimiento (AAAA-MM-DD):', hoy)
-    if (!fechaReal) return
-    onMarcarHitoCumplido(hito.id, fechaReal)
-  }
+  const handleNuevo = () => { setEditingHito(null); setModalOpen(true) }
+  const handleEditar = (h) => { setEditingHito(h); setModalOpen(true) }
 
   return (
     <div>
       {isEditor && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
           <button
-            onClick={() => setModalOpen(true)}
+            onClick={handleNuevo}
             style={{ background: orange, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
             onMouseEnter={e => e.currentTarget.style.opacity = '0.88'}
             onMouseLeave={e => e.currentTarget.style.opacity = '1'}
@@ -591,31 +605,31 @@ function TabHitos({ p, obraHitos, onGuardarHito, onEliminarHito, onMarcarHitoCum
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {hitos.map(h => {
-            const meta = ESTADO_HITO_META[h.estado] || ESTADO_HITO_META.pendiente
+            const semaforo = semaforoHito(h)
             return (
-              <div key={h.id} style={card}>
+              <div key={h.id} style={{ ...card, borderLeft: `4px solid ${semaforo.color}`, background: semaforo.bg }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: dark, textDecoration: meta.strike ? 'line-through' : 'none' }}>{h.nombre}</div>
+                  <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setHitoDetalle(h)}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: dark }}>{h.nombre}</div>
                     <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                       Previsto: {fmtFecha(h.fechaPrevista)}
                       {h.fechaReal && ` · Real: ${fmtFecha(h.fechaReal)}`}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <Badge label={meta.label} color={meta.color} bg={meta.bg} />
-                    {h.estado === 'pendiente' && isEditor && (
+                    <Badge label={semaforo.label} color={semaforo.color} bg="white" />
+                    {isEditor && (
                       <button
-                        onClick={() => handleMarcarCumplido(h)}
-                        style={{ padding: '4px 10px', borderRadius: 6, border: `1px solid ${green}44`, background: greenLight, color: green, fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}
+                        onClick={() => handleEditar(h)}
+                        style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
                       >
-                        ✓ Marcar cumplido
+                        ✏️
                       </button>
                     )}
                     {isEditor && (
                       <button
                         onClick={() => onEliminarHito(h.id)}
-                        style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid #FECACA`, background: '#FFF5F5', color: red, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
+                        style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid #FECACA`, background: 'white', color: red, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}
                       >
                         🗑
                       </button>
@@ -624,6 +638,24 @@ function TabHitos({ p, obraHitos, onGuardarHito, onEliminarHito, onMarcarHitoCum
                 </div>
 
                 {h.descripcion && <p style={{ fontSize: 12, color: mid, marginTop: 8 }}>{h.descripcion}</p>}
+
+                {h.proveedor && (
+                  <div style={{ marginTop: 8 }}>
+                    <InfoRow label="Proveedor" value={h.proveedor} />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+                  {CHECKLIST_ITEMS.map(it => {
+                    const val = h[it.key] || 'pendiente'
+                    const cm = CHECKLIST_META[val] || CHECKLIST_META.pendiente
+                    return (
+                      <span key={it.key} style={{ fontSize: 10, fontWeight: 700, color: cm.color, background: 'white', border: `1px solid ${cm.color}33`, padding: '2px 8px', borderRadius: 99 }}>
+                        {it.label.split(' / ')[0]}: {cm.label}
+                      </span>
+                    )
+                  })}
+                </div>
 
                 {h.responsable && (
                   <div style={{ marginTop: 8 }}>
@@ -647,7 +679,11 @@ function TabHitos({ p, obraHitos, onGuardarHito, onEliminarHito, onMarcarHitoCum
       )}
 
       {modalOpen && (
-        <ModalHito obraId={p.id} onSave={onGuardarHito} onClose={() => setModalOpen(false)} />
+        <ModalHito obraId={p.id} hito={editingHito} onSave={onGuardarHito} onClose={() => { setModalOpen(false); setEditingHito(null) }} />
+      )}
+
+      {hitoDetalle && (
+        <ModalDetalleHito hito={hitoDetalle} obra={p} onClose={() => setHitoDetalle(null)} />
       )}
     </div>
   )
@@ -669,7 +705,7 @@ function ProjectRow({
   onDeleteCronograma, onEditarInforme,
   isDesktop, teamMembers, isEditor, proyectosArmar,
   presupuestos, // reservado para uso futuro
-  obraHitos, onGuardarHito, onEliminarHito, onMarcarHitoCumplido,
+  obraHitos, onGuardarHito, onEliminarHito,
 }) {
   const [open,      setOpen]      = useState(false)
   const [activeTab, setActiveTab] = useState('resumen')
@@ -679,7 +715,7 @@ function ProjectRow({
   // Conteos para badges de pestaña
   const totalInformes = cronogramaArr.flatMap(c => c.informes || []).length
   const totalCerts    = cronogramaArr.flatMap(c => c.certificados || []).length
-  const totalHitosPendientes = (obraHitos || []).filter(h => h.obraId === p.id && h.estado === 'pendiente').length
+  const totalHitosPendientes = (obraHitos || []).filter(h => h.obraId === p.id && h.estado !== 'cumplido').length
 
   return (
     <div style={{ borderBottom: `1px solid ${border}`, background: open ? '#FFFBF7' : 'white', transition: 'background 0.15s' }}>
@@ -821,6 +857,7 @@ function ProjectRow({
                 onEditarInforme={onEditarInforme}
                 isEditor={isEditor}
                 proyectosArmar={proyectosArmar}
+                obraHitos={(obraHitos || []).filter(h => h.obraId === p.id)}
               />
             )}
             {activeTab === 'avances' && (
@@ -832,7 +869,6 @@ function ProjectRow({
                 obraHitos={obraHitos}
                 onGuardarHito={onGuardarHito}
                 onEliminarHito={onEliminarHito}
-                onMarcarHitoCumplido={onMarcarHitoCumplido}
                 isEditor={isEditor}
               />
             )}
@@ -852,7 +888,7 @@ function ProjectRow({
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function ProjectList({
   projects, cronogramas, teamMembers, proyectosArmar, presupuestos = [],
-  obraHitos = [], onGuardarHito, onEliminarHito, onMarcarHitoCumplido,
+  obraHitos = [], onGuardarHito, onEliminarHito,
   onAdd, onEdit, onDelete, onUpdateTasks,
   onCreateCronograma, onSaveCronograma, onCargarAvance,
   onDeleteCronograma, onEditarInforme, isEditor,
@@ -962,7 +998,6 @@ export default function ProjectList({
             obraHitos={obraHitos}
             onGuardarHito={onGuardarHito}
             onEliminarHito={onEliminarHito}
-            onMarcarHitoCumplido={onMarcarHitoCumplido}
           />
         ))}
       </div>

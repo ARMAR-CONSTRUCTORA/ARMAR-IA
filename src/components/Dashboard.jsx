@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useBreakpoint } from '../hooks/useBreakpoint'
 import { CalendarioTab } from './CalendarioPage'
+import ModalDetalleHito, { semaforoHito } from './ModalDetalleHito'
 
 const orange = '#E8641A', orangeLight = '#FFF3EB'
 const dark = '#1A1A1A', mid = '#444', border = '#E0DDD8'
@@ -23,13 +25,6 @@ const PRESUP_META = {
   borrador: { label: 'Borrador', color: '#6B7280', bg: '#F3F4F6'   },
   enviado:  { label: 'Enviado',  color: orange,    bg: orangeLight },
   aprobado: { label: 'Aprobado', color: green,     bg: greenLight  },
-}
-
-const ORIGEN_COLOR = {
-  proyecto:    '#E8641A',
-  presupuesto: '#2563EB',
-  cronograma:  '#2D7A4F',
-  manual:      '#6B7280',
 }
 
 function fmtCorta(dateStr) {
@@ -142,12 +137,12 @@ function Dashboard({
   obraHitos       = [],
   onGuardarHito,
   onEliminarHito,
-  onMarcarHitoCumplido,
   onAdd,
   onNavigate,
   isEditor,
 }) {
   const { isMobile, isDesktop } = useBreakpoint()
+  const [hitoDetalle, setHitoDetalle] = useState(null)
 
   const today = new Date().toISOString().slice(0, 10)
   const in7Days = new Date()
@@ -171,24 +166,42 @@ function Dashboard({
   const obrasActivas    = projects.filter(p => p.status === 'activa').slice(0, 5)
   const presupRecientes = presupuestos.slice(0, 5)
 
-  const hitosObraProximos = obraHitos
-    .filter(h => h.estado === 'pendiente' && h.fechaPrevista >= today && h.fechaPrevista <= in7DaysStr)
-    .map(h => ({
-      id:         `hito-${h.id}`,
-      titulo:     h.nombre,
-      tipoEvento: 'hito',
+  const hitosUnificados = [
+    ...obraHitos.map(h => ({
+      id:         `obra-${h.id}`,
+      nombre:     h.nombre,
       fecha:      h.fechaPrevista,
-      origen:     'obra',
       esHitoObra: true,
-    }))
+      raw:        h,
+    })),
+    ...calendarioEventos
+      .filter(e => e.tipoEvento === 'hito' && e.origen !== 'obra')
+      .map(e => ({
+        id:         `cal-${e.id}`,
+        nombre:     e.titulo,
+        fecha:      e.fecha,
+        esHitoObra: false,
+        raw:        e,
+      })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
 
-  const proximosHitos = [...calendarioEventos.filter(e => e.fecha >= today && e.origen !== 'obra'), ...hitosObraProximos]
-    .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''))
-    .slice(0, 7)
+  const handleClickHito = (item) => {
+    if (item.esHitoObra) {
+      setHitoDetalle({ hito: item.raw, obra: projects.find(p => String(p.id) === String(item.raw.obraId)) })
+    } else {
+      const e = item.raw
+      const obra = e.obraId ? projects.find(p => String(p.id) === String(e.obraId)) : null
+      const pa = !obra && e.proyectoArmarId ? proyectosArmar.find(x => String(x.id) === String(e.proyectoArmarId)) : null
+      setHitoDetalle({
+        hito: { nombre: e.titulo, fechaPrevista: e.fecha, estado: e.estado || 'pendiente' },
+        obra: obra ? { name: obra.name } : pa ? { name: pa.nombre } : null,
+      })
+    }
+  }
 
   // ── Layout ──────────────────────────────────────────────────────────────────
   const kpiCols  = isMobile ? 'repeat(2, 1fr)' : isDesktop ? 'repeat(6, 1fr)' : 'repeat(3, 1fr)'
-  const midCols  = isDesktop ? 'repeat(3, 1fr)' : '1fr'
+  const midCols  = isDesktop ? 'repeat(2, 1fr)' : '1fr'
   const botCols  = isDesktop ? '1fr 340px' : '1fr'
 
   const todayLabel = new Date().toLocaleDateString('es-CL', {
@@ -226,7 +239,7 @@ function Dashboard({
         <MetricCard icon="📅" value={kpiHitos}         label="Hitos próx. 7 días"       color={red}       bg={redLight}    onClick={() => nav('calendario')}  />
       </div>
 
-      {/* ── Fila media — 3 columnas ── */}
+      {/* ── Fila media — 2 columnas ── */}
       <div style={{ display: 'grid', gridTemplateColumns: midCols, gap }}>
 
         {/* Proyectos en curso */}
@@ -288,34 +301,6 @@ function Dashboard({
           }
         </SectionCard>
 
-        {/* Próximos hitos */}
-        <SectionCard title="Próximos hitos" onVerTodas={() => nav('calendario')}>
-          {proximosHitos.length === 0
-            ? <EmptyRow msg="Sin hitos próximos" />
-            : proximosHitos.map((ev, i) => {
-              const color = ORIGEN_COLOR[ev.origen] || '#6B7280'
-              const isHoy = ev.fecha === today
-              return (
-                <div key={ev.id}>
-                  <div style={{ padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {ev.esHitoObra
-                      ? <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1 }}>🎯</span>
-                      : <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0, marginTop: 1 }} />
-                    }
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.titulo}</div>
-                      <div style={{ fontSize: 10, color: '#9CA3AF', marginTop: 1, textTransform: 'capitalize' }}>{ev.esHitoObra ? 'hito de obra' : ev.tipoEvento}</div>
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: isHoy ? orange : color, background: isHoy ? orangeLight : `${color}18`, padding: '2px 7px', borderRadius: 6, flexShrink: 0 }}>
-                      {isHoy ? 'Hoy' : fmtCorta(ev.fecha)}
-                    </span>
-                  </div>
-                  {i < proximosHitos.length - 1 && <RowDivider />}
-                </div>
-              )
-            })
-          }
-        </SectionCard>
       </div>
 
       {/* ── Fila inferior — 2 columnas ── */}
@@ -350,6 +335,54 @@ function Dashboard({
         {/* Mini calendario */}
         <CalendarioTab compact eventos={calendarioEventos} />
       </div>
+
+      {/* ── Hitos (obra + proyecto) ── */}
+      <SectionCard title="Hitos" onVerTodas={() => nav('calendario')}>
+        {hitosUnificados.length === 0
+          ? <EmptyRow msg="Sin hitos cargados" />
+          : hitosUnificados.map((item, i) => {
+            const semaforo = semaforoHito(item.raw)
+            const e = item.raw
+            const obraNombre = item.esHitoObra
+              ? projects.find(p => String(p.id) === String(e.obraId))?.name
+              : (e.obraId
+                  ? projects.find(p => String(p.id) === String(e.obraId))?.name
+                  : proyectosArmar.find(pa => String(pa.id) === String(e.proyectoArmarId))?.nombre)
+            const isHoy = item.fecha === today
+            return (
+              <div key={item.id}>
+                <div
+                  onClick={() => handleClickHito(item)}
+                  style={{ padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}
+                  onMouseEnter={ev => ev.currentTarget.style.background = '#FAFAFA'}
+                  onMouseLeave={ev => ev.currentTarget.style.background = 'transparent'}
+                >
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: semaforo.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.nombre}</div>
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {obraNombre || (item.esHitoObra ? '—' : 'Proyecto')}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: semaforo.color, background: semaforo.bg, padding: '3px 10px', borderRadius: 99, flexShrink: 0 }}>{semaforo.label}</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: isHoy ? orange : mid, background: isHoy ? orangeLight : '#F3F4F6', padding: '3px 10px', borderRadius: 99, flexShrink: 0 }}>
+                    {isHoy ? 'Hoy' : fmtCorta(item.fecha)}
+                  </span>
+                </div>
+                {i < hitosUnificados.length - 1 && <RowDivider />}
+              </div>
+            )
+          })
+        }
+      </SectionCard>
+
+      {hitoDetalle && (
+        <ModalDetalleHito
+          hito={hitoDetalle.hito}
+          obra={hitoDetalle.obra}
+          onClose={() => setHitoDetalle(null)}
+        />
+      )}
     </div>
   )
 }

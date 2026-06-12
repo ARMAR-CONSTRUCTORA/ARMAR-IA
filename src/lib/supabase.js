@@ -276,13 +276,13 @@ export async function deleteCronograma(id) {
 export async function loadTeamMembers() {
   const { data, error } = await supabase.from('team_members').select('*').order('created_at')
   if (error) { console.error('loadTeamMembers:', error); return [] }
-  return (data || []).map(r => ({ id: r.id, name: r.name, category: r.category }))
+  return (data || []).map(r => ({ id: r.id, name: r.name, category: r.category, telefono: r.telefono || '', email: r.email || '' }))
 }
 
 export async function upsertTeamMember(member) {
   const { error } = await supabase
     .from('team_members')
-    .upsert({ id: member.id, name: member.name, category: member.category })
+    .upsert({ id: member.id, name: member.name, category: member.category, telefono: member.telefono || null, email: member.email || null })
   if (error) console.error('upsertTeamMember:', error)
 }
 
@@ -861,6 +861,10 @@ function fromDbHito(row) {
     impactoSiDemora:  row.impacto_si_demora || '',
     visibleCalendario: row.visible_calendario !== false,
     observaciones:    row.observaciones || '',
+    proveedor:               row.proveedor || '',
+    checklistDocumentacion:  row.checklist_documentacion || 'pendiente',
+    checklistPresupuesto:    row.checklist_presupuesto   || 'pendiente',
+    checklistPago:           row.checklist_pago          || 'pendiente',
   }
 }
 
@@ -877,6 +881,10 @@ function toDbHito(h) {
     impacto_si_demora:  h.impactoSiDemora || '',
     visible_calendario: h.visibleCalendario !== false,
     observaciones:      h.observaciones || '',
+    proveedor:               h.proveedor || '',
+    checklist_documentacion: h.checklistDocumentacion || 'pendiente',
+    checklist_presupuesto:   h.checklistPresupuesto   || 'pendiente',
+    checklist_pago:          h.checklistPago          || 'pendiente',
   }
   if (h.id) out.id = h.id
   return out

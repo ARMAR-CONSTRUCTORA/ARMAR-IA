@@ -69,9 +69,14 @@ function DeleteConfirm({ name, onConfirm, onCancel }) {
   )
 }
 
+const fieldLabelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }
+const textInputStyle  = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--gray-200)', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }
+
 function AddMemberModal({ category, onAdd, onClose }) {
-  const [name, setName] = useState('')
-  const [cat, setCat]   = useState(category)
+  const [name, setName]         = useState('')
+  const [cat, setCat]           = useState(category)
+  const [telefono, setTelefono] = useState('')
+  const [email, setEmail]       = useState('')
   const inputRef = useRef(null)
   useEffect(() => { inputRef.current?.focus() }, [])
 
@@ -79,7 +84,7 @@ function AddMemberModal({ category, onAdd, onClose }) {
     e.preventDefault()
     const trimmed = name.trim()
     if (!trimmed) return
-    onAdd(trimmed, cat)
+    onAdd(trimmed, cat, telefono.trim(), email.trim())
     onClose()
   }
 
@@ -90,14 +95,30 @@ function AddMemberModal({ category, onAdd, onClose }) {
         <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 20 }}>Agregar persona</h3>
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Nombre</label>
+            <label style={fieldLabelStyle}>Nombre</label>
             <input ref={inputRef} value={name} onChange={e => setName(e.target.value)} placeholder="Ej: Ing. Juan García"
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--gray-200)', fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }}
+              style={textInputStyle}
               onFocus={e => { e.target.style.borderColor = '#F97316' }}
               onBlur={e => { e.target.style.borderColor = 'var(--gray-200)' }} />
           </div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabelStyle}>Teléfono</label>
+              <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="Ej: 11 2345-6789" type="tel"
+                style={textInputStyle}
+                onFocus={e => { e.target.style.borderColor = '#F97316' }}
+                onBlur={e => { e.target.style.borderColor = 'var(--gray-200)' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabelStyle}>Email</label>
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Ej: juan@armar.com" type="email"
+                style={textInputStyle}
+                onFocus={e => { e.target.style.borderColor = '#F97316' }}
+                onBlur={e => { e.target.style.borderColor = 'var(--gray-200)' }} />
+            </div>
+          </div>
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Categoría</label>
+            <label style={fieldLabelStyle}>Categoría</label>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {CATEGORIES.map(c => {
                 const meta   = CATEGORY_META[c]
@@ -121,18 +142,62 @@ function AddMemberModal({ category, onAdd, onClose }) {
   )
 }
 
-function MemberCard({ member, obras, onEdit, onDelete, isEditor }) {
-  const [editing, setEditing]   = useState(false)
-  const [editName, setEditName] = useState(member.name)
+function EditMemberModal({ member, onSave, onClose }) {
+  const [name, setName]         = useState(member.name)
+  const [telefono, setTelefono] = useState(member.telefono || '')
+  const [email, setEmail]       = useState(member.email || '')
   const inputRef = useRef(null)
-  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
+  useEffect(() => { inputRef.current?.focus() }, [])
 
-  const confirmEdit = () => {
-    const trimmed = editName.trim()
-    if (trimmed && trimmed !== member.name) onEdit(member.id, trimmed)
-    else setEditName(member.name)
-    setEditing(false)
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    const trimmed = name.trim()
+    if (!trimmed) return
+    onSave({ name: trimmed, telefono: telefono.trim(), email: email.trim() })
+    onClose()
   }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, backdropFilter: 'blur(2px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'white', borderRadius: 16, padding: 32, maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--gray-800)', marginBottom: 20 }}>Editar persona</h3>
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: 16 }}>
+            <label style={fieldLabelStyle}>Nombre</label>
+            <input ref={inputRef} value={name} onChange={e => setName(e.target.value)}
+              style={textInputStyle}
+              onFocus={e => { e.target.style.borderColor = '#F97316' }}
+              onBlur={e => { e.target.style.borderColor = 'var(--gray-200)' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabelStyle}>Teléfono</label>
+              <input value={telefono} onChange={e => setTelefono(e.target.value)} placeholder="Ej: 11 2345-6789" type="tel"
+                style={textInputStyle}
+                onFocus={e => { e.target.style.borderColor = '#F97316' }}
+                onBlur={e => { e.target.style.borderColor = 'var(--gray-200)' }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={fieldLabelStyle}>Email</label>
+              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Ej: juan@armar.com" type="email"
+                style={textInputStyle}
+                onFocus={e => { e.target.style.borderColor = '#F97316' }}
+                onBlur={e => { e.target.style.borderColor = 'var(--gray-200)' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={onClose} style={{ padding: '10px 22px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 14, fontFamily: 'inherit' }}>Cancelar</button>
+            <button type="submit" style={{ padding: '10px 22px', borderRadius: 8, border: 'none', background: '#F97316', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 14, fontFamily: 'inherit' }}>Guardar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+function MemberCard({ member, obras, onEdit, onDelete, isEditor }) {
+  const [editing, setEditing] = useState(false)
 
   const activas    = obras.filter(o => o.status === 'activa').length
   const terminadas = obras.filter(o => o.status === 'terminada').length
@@ -148,17 +213,20 @@ function MemberCard({ member, obras, onEdit, onDelete, isEditor }) {
           {ini}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          {editing ? (
-            <input ref={inputRef} value={editName} onChange={e => setEditName(e.target.value)}
-              onBlur={confirmEdit}
-              onKeyDown={e => { if (e.key === 'Enter') confirmEdit(); if (e.key === 'Escape') { setEditName(member.name); setEditing(false) } }}
-              style={{ width: '100%', fontSize: 14, fontWeight: 700, border: '1px solid #F97316', borderRadius: 6, padding: '3px 8px', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', color: 'var(--gray-800)' }} />
-          ) : (
-            <div style={{ fontWeight: 700, color: 'var(--gray-800)', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{member.name}</div>
-          )}
+          <div style={{ fontWeight: 700, color: 'var(--gray-800)', fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{member.name}</div>
           <div style={{ color: 'var(--gray-400)', fontSize: 11, marginTop: 2 }}>
             {obras.length} {obras.length === 1 ? 'obra asignada' : 'obras asignadas'}
           </div>
+          {(member.telefono || member.email) && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 1, marginTop: 4 }}>
+              {member.telefono && (
+                <div style={{ color: 'var(--gray-500)', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>📞 {member.telefono}</div>
+              )}
+              {member.email && (
+                <div style={{ color: 'var(--gray-500)', fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>✉️ {member.email}</div>
+              )}
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
           <div style={{ textAlign: 'right' }}>
@@ -167,7 +235,7 @@ function MemberCard({ member, obras, onEdit, onDelete, isEditor }) {
           </div>
           {isEditor && (
             <div style={{ display: 'flex', gap: 4 }}>
-              <button onClick={() => { setEditName(member.name); setEditing(true) }} title="Editar nombre"
+              <button onClick={() => setEditing(true)} title="Editar persona"
                 style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--gray-200)', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)', fontSize: 13 }}
                 onMouseEnter={e => { e.currentTarget.style.background = '#EFF6FF'; e.currentTarget.style.color = '#3B82F6'; e.currentTarget.style.borderColor = '#BFDBFE' }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'white'; e.currentTarget.style.color = 'var(--gray-400)'; e.currentTarget.style.borderColor = 'var(--gray-200)' }}>✏️</button>
@@ -213,6 +281,14 @@ function MemberCard({ member, obras, onEdit, onDelete, isEditor }) {
             </div>
           ))}
         </div>
+      )}
+
+      {editing && (
+        <EditMemberModal
+          member={member}
+          onSave={changes => onEdit(member.id, changes)}
+          onClose={() => setEditing(false)}
+        />
       )}
     </div>
   )

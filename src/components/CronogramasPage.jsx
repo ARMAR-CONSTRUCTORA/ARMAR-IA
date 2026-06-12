@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useBreakpoint } from '../hooks/useBreakpoint'
+import ModalDetalleHito, { semaforoHito } from './ModalDetalleHito'
 
 // ── Colores y etiquetas ────────────────────────────────────────────────────
 const STATUS_COLORS = {
@@ -50,10 +51,11 @@ function fmtShortDate(str) {
 }
 
 // ── Componente principal ───────────────────────────────────────────────────
-function CronogramasPage({ projects, proyectosArmar }) {
+function CronogramasPage({ projects, proyectosArmar, obraHitos = [] }) {
   const { isMobile } = useBreakpoint()
   const [filter, setFilter] = useState('todas')
   const [ppd, setPPD]       = useState(DEFAULT_PPD)
+  const [hitoDetalle, setHitoDetalle] = useState(null)
 
   const scrollRef   = useRef()
   const ppdRef      = useRef(ppd)
@@ -72,8 +74,15 @@ function CronogramasPage({ projects, proyectosArmar }) {
   )
 
   const pd = (s) => new Date(s + 'T00:00:00')
-  const minDate = new Date(Math.min(...base.map(p => pd(p.startDate))))
-  const maxDate = new Date(Math.max(...base.map(p => pd(p.endDate))))
+  const hitosValidos = (obraHitos || []).filter(h => h.fechaPrevista && base.some(p => String(p.id) === String(h.obraId)))
+
+  const allDates = [
+    ...base.map(p => pd(p.startDate)),
+    ...base.map(p => pd(p.endDate)),
+    ...hitosValidos.map(h => pd(h.fechaPrevista)),
+  ]
+  const minDate = new Date(Math.min(...allDates))
+  const maxDate = new Date(Math.max(...allDates))
   minDate.setDate(1)
   maxDate.setMonth(maxDate.getMonth() + 1, 0)
 
@@ -325,6 +334,7 @@ wheelCbRef.current = (e) => {
                 const barW   = Math.max(4, toPx(pd(p.endDate)) - barX)
                 const rowBg  = i % 2 === 0 ? 'white' : '#FAFAFA'
                 const proyArmar = p.proyectoArmarId ? (proyectosArmar || []).find(pa => pa.id === p.proyectoArmarId) : null
+                const hitosObra = hitosValidos.filter(h => String(h.obraId) === String(p.id))
 
                 return (
                   <div key={p.id} style={{
@@ -417,6 +427,26 @@ wheelCbRef.current = (e) => {
                           </div>
                         )}
                       </div>
+
+                      {/* Marcadores de hitos */}
+                      {hitosObra.map(h => {
+                        const semaforo = semaforoHito(h)
+                        const x = toPx(pd(h.fechaPrevista))
+                        return (
+                          <div
+                            key={`hito-${h.id}`}
+                            title={`${h.nombre} — ${fmtShortDate(h.fechaPrevista)}`}
+                            onClick={() => setHitoDetalle({ hito: h, obra: p })}
+                            style={{
+                              position: 'absolute', zIndex: 4, cursor: 'pointer',
+                              left: x - 6, top: isMobile ? 4 : 6,
+                              width: 12, height: 12, transform: 'rotate(45deg)',
+                              background: semaforo.color, border: '2px solid white',
+                              boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                            }}
+                          />
+                        )
+                      })}
                     </div>
                   </div>
                 )
@@ -444,11 +474,19 @@ wheelCbRef.current = (e) => {
             <div style={{ width: 2, height: 12, background: 'var(--orange)', borderRadius: 1 }} />
             <span style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 500 }}>Hoy</span>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <div style={{ width: 9, height: 9, transform: 'rotate(45deg)', background: '#9CA3AF', border: '1.5px solid white', boxShadow: '0 1px 2px rgba(0,0,0,0.25)' }} />
+            <span style={{ fontSize: 11, color: 'var(--gray-600)', fontWeight: 500 }}>Hito</span>
+          </div>
           <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--gray-400)', fontStyle: 'italic' }}>
             {isMobile ? '← deslizá para navegar →' : 'Ctrl + rueda para zoom · rueda para desplazar'}
           </span>
         </div>
       </div>
+
+      {hitoDetalle && (
+        <ModalDetalleHito hito={hitoDetalle.hito} obra={hitoDetalle.obra} onClose={() => setHitoDetalle(null)} />
+      )}
     </div>
   )
 }

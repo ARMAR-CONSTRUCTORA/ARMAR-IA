@@ -485,12 +485,11 @@ export default function ProjectModal({ project, teamMembers, proyectosArmar, pre
                 </p>
                 <div style={{ display: 'grid', gridTemplateColumns: col2, gap: 12 }}>
                   <Field label="Arquitecto/a del proyecto">
-                    <input
-                      type="text"
+                    <TeamSelect
                       value={form.arquitectoProyecto}
                       onChange={e => set('arquitectoProyecto', e.target.value)}
-                      style={inputStyle(false)}
-                      placeholder="Nombre del/la arquitecto/a"
+                      teamMembers={teamMembers}
+                      placeholder="Seleccionar arquitecto/a…"
                     />
                   </Field>
                   <Field label="Contacto">

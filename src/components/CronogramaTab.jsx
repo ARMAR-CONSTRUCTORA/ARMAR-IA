@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { calcAvanceEtapa, calcAvanceGeneral, estadoFromAvance } from '../data/cronogramaTemplates'
-import { calcDuracionHabil, computeCascade } from '../utils/calendarUtils'
+import { calcDuracionHabil, computeCascade, normalizarEtapasConFechas } from '../utils/calendarUtils'
 import ModalCrearCronograma from './ModalCrearCronograma'
 import ModalCargarAvance from './ModalCargarAvance'
 import ModalEditarEtapa from './ModalEditarEtapa'
 import { loadChecklistItems, upsertChecklistItem, upsertCalendarioEvento } from '../lib/supabase'
+import { semaforoHito } from './ModalDetalleHito'
 
 const ESTADO_STYLE = {
   'Pendiente':   { color: '#6B7280', bg: '#F3F4F6', border: '#D1D5DB' },
@@ -19,6 +20,21 @@ const PPD_LEVELS = [
   { val: 2.6,  label: 'Mensual'    },
   { val: 5.5,  label: 'Semanal'    },
   { val: 12,   label: 'Diario'     },
+]
+
+const EMPTY_SET = new Set()
+
+// Columnas opcionales de la tabla del Gantt — seleccionables al exportar a PDF
+const PDF_COLUMNAS = [
+  { key: 'fin',         label: 'Fin Est.'    },
+  { key: 'duracion',    label: 'Duración'    },
+  { key: 'avance',      label: 'Avance'      },
+  { key: 'estado',      label: 'Estado'      },
+  { key: 'presupuesto', label: 'Presupuesto' },
+  { key: 'adicionales', label: 'Adicionales' },
+  { key: 'subtotal',    label: 'Subtotal'    },
+  { key: 'pagos',       label: 'Pagos'       },
+  { key: 'saldo',       label: 'Saldo'       },
 ]
 
 function fmtShort(d) {
@@ -65,6 +81,16 @@ function calcPagadoAcumulado(tareaId, certificados) {
     const e = (cert.etapas || []).find(e => e.tareaId === tareaId)
     return s + (e?.montoPagado || 0)
   }, 0)
+}
+
+const ETAPA_COLOR_DEFAULT = '#F97316'
+
+function hexToRgba(hex, alpha) {
+  const h = (hex || ETAPA_COLOR_DEFAULT).replace('#', '')
+  const full = h.length === 3 ? h.split('').map(c => c + c).join('') : h
+  const num = parseInt(full, 16)
+  const r = (num >> 16) & 255, g = (num >> 8) & 255, b = num & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
 }
 
 const orange = "#E8641A", orangeLight = "#FFF3EB"
@@ -229,7 +255,7 @@ function StatsPanel({ tareas, avanceGeneral, informes, certificados }) {
   )
 }
 
-function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, onAddEtapa, ppd, onZoomChange, certificados }) {
+function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, onAddEtapa, ppd, onZoomChange, certificados, hitos = [], hiddenCols = EMPTY_SET }) {
   const scrollRef = useRef()
   const [expandedEtapas, setExpandedEtapas] = useState(new Set(tareas.filter(t => t.parentId === null).map(t => t.id)))
 
@@ -239,16 +265,42 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   const validDates = tareas.filter(t => t.fechaInicio && t.fechaFin)
   if (!validDates.length) return null
 
-  const minDate = new Date(Math.min(...validDates.map(t => toDate(t.fechaInicio))))
-  const maxDate = new Date(Math.max(...validDates.map(t => toDate(t.fechaFin))))
+  const hitosValidos = (hitos || []).filter(h => h.fechaPrevista).sort((a, b) => (a.fechaPrevista || '').localeCompare(b.fechaPrevista || ''))
+
+  const COL_NOMBRE   = 160
+  const COL_INICIO   = 65
+  const COL_FIN      = 65
+  const COL_DIAS     = 68
+  const COL_AVANCE   = 85
+  const COL_ESTADO   = 78
+  const COL_PRESUP   = 82
+  const COL_ADIC     = 75
+  const COL_SUBTOTAL = 82
+  const COL_PAGOS    = 82
+  const COL_SALDO    = 82
+
+  const COL_W = { fin: COL_FIN, duracion: COL_DIAS, avance: COL_AVANCE, estado: COL_ESTADO, presupuesto: COL_PRESUP, adicionales: COL_ADIC, subtotal: COL_SUBTOTAL, pagos: COL_PAGOS, saldo: COL_SALDO }
+  const visibleCols = PDF_COLUMNAS.filter(c => !hiddenCols.has(c.key))
+  const TABLE_W = COL_NOMBRE + COL_INICIO + visibleCols.reduce((s, c) => s + COL_W[c.key], 0)
+  const hiddenColsW = PDF_COLUMNAS.filter(c => hiddenCols.has(c.key)).reduce((s, c) => s + COL_W[c.key], 0)
+
+  const allDates = [
+    ...validDates.map(t => toDate(t.fechaInicio)),
+    ...validDates.map(t => toDate(t.fechaFin)),
+    ...hitosValidos.map(h => toDate(h.fechaPrevista)),
+  ]
+  const minDate = new Date(Math.min(...allDates))
+  const maxDate = new Date(Math.max(...allDates))
   minDate.setDate(1); maxDate.setMonth(maxDate.getMonth() + 1, 0)
 
   const totalDays = Math.max(1, (maxDate - minDate) / 86400000)
-  const timelineW = totalDays * ppd
+  // Al exportar con columnas ocultas, el Gantt aprovecha ese espacio liberado mostrando más detalle (escala semanal/diaria)
+  const effectivePpd = hiddenColsW > 0 ? Math.min(24, ppd + hiddenColsW / totalDays) : ppd
+  const timelineW = totalDays * effectivePpd
   const months    = generateMonths(minDate, maxDate)
   const today     = new Date()
-  const todayX    = Math.min(timelineW, Math.max(0, (today - minDate) / 86400000 * ppd))
-  const toPx      = (d) => Math.max(0, (toDate(d) - minDate) / 86400000 * ppd)
+  const todayX    = Math.min(timelineW, Math.max(0, (today - minDate) / 86400000 * effectivePpd))
+  const toPx      = (d) => Math.max(0, (toDate(d) - minDate) / 86400000 * effectivePpd)
   const HEADER_H  = 34, ROW_H = 40
 
   useEffect(() => {
@@ -269,19 +321,6 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
 
   const toggleExpand = (id) => setExpandedEtapas(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
-  const COL_NOMBRE   = 160
-  const COL_INICIO   = 65
-  const COL_FIN      = 65
-  const COL_DIAS     = 68
-  const COL_AVANCE   = 85
-  const COL_ESTADO   = 78
-  const COL_PRESUP   = 82
-  const COL_ADIC     = 75
-  const COL_SUBTOTAL = 82
-  const COL_PAGOS    = 82
-  const COL_SALDO    = 82
-  const TABLE_W = COL_NOMBRE + COL_INICIO + COL_FIN + COL_DIAS + COL_AVANCE + COL_ESTADO + COL_PRESUP + COL_ADIC + COL_SUBTOTAL + COL_PAGOS + COL_SALDO
-
   const cellStyle = (w, isSticky = false) => ({
     width: w, minWidth: w, maxWidth: w, flexShrink: 0,
     ...(isSticky ? { position: 'sticky', left: 0, zIndex: 3, boxShadow: '2px 0 4px rgba(0,0,0,0.04)' } : {}),
@@ -299,9 +338,13 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     const indent      = isSubtarea ? 20 : 0
     const avance      = tarea.parentId === null ? calcAvanceEtapa(tareas, tarea.id) : tarea.avanceActual
     const barX        = toPx(tarea.fechaInicio)
-    const barW        = Math.max(4, toPx(tarea.fechaFin) - barX + ppd)
-    const etaColor    = tarea.esCritica ? '#DC2626' : '#F97316'
-    const barBorder   = isSubtarea ? '#FDBA74' : tarea.esCritica ? '#EF4444' : '#FB923C'
+    const barW        = Math.max(4, toPx(tarea.fechaFin) - barX + effectivePpd)
+    const etapaTarea  = isSubtarea ? tareas.find(t => t.id === tarea.parentId) : tarea
+    const baseColor   = etapaTarea?.color || ETAPA_COLOR_DEFAULT
+    const etaColor    = tarea.esCritica ? '#DC2626' : baseColor
+    const barBg       = isSubtarea ? hexToRgba(baseColor, 0.10) : hexToRgba(baseColor, 0.20)
+    const barBorder   = isSubtarea ? hexToRgba(baseColor, 0.5) : (tarea.esCritica ? '#EF4444' : baseColor)
+    const fillColor   = isSubtarea ? hexToRgba(baseColor, 0.45) : etaColor
     const estado      = tarea.estado || estadoFromAvance(avance)
     const dur         = calcDuracionHabil(tarea.fechaInicio, tarea.fechaFin)
     const adic        = calcTotalAdicionales(tarea)
@@ -322,6 +365,9 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
             </button>
           )}
           <span style={{ fontSize: 11, fontWeight: isSubtarea ? 400 : 700, color: 'var(--gray-800)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {!isSubtarea && (
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: baseColor, marginRight: 5, flexShrink: 0, verticalAlign: 'middle' }} />
+            )}
             {tarea.esCritica && <span style={{ color: '#DC2626', marginRight: 3 }}>●</span>}
             <span style={{ color: 'var(--gray-400)', fontWeight: 400, marginRight: 4 }}>{numMap[tarea.id]}</span>
             {tarea.nombre}
@@ -330,52 +376,70 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
         <div style={{ ...cellStyle(COL_INICIO), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
           <span style={{ fontSize: 10, color: 'var(--gray-600)' }}>{fmtShort(tarea.fechaInicio)}</span>
         </div>
-        <div style={{ ...cellStyle(COL_FIN), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, color: 'var(--gray-600)' }}>{fmtShort(tarea.fechaFin)}</span>
-        </div>
-        <div style={{ ...cellStyle(COL_DIAS), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, color: 'var(--gray-500)' }}>{dur} días</span>
-        </div>
-        <div style={{ ...cellStyle(COL_AVANCE), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <ProgressCell value={avance} />
-        </div>
-        <div style={{ ...cellStyle(COL_ESTADO), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <EstadoBadge estado={estado} />
-        </div>
-        <div style={{ ...cellStyle(COL_PRESUP), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, color: tarea.presupuesto ? 'var(--gray-700)' : 'var(--gray-300)', fontWeight: tarea.presupuesto ? 600 : 400 }}>
-            {tarea.presupuesto ? fmtPesos(tarea.presupuesto) : '—'}
-          </span>
-        </div>
-        <div style={{ ...cellStyle(COL_ADIC), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, color: adic > 0 ? '#F97316' : 'var(--gray-300)', fontWeight: adic > 0 ? 600 : 400 }}>
-            {adic > 0 ? fmtPesos(adic) : '—'}
-          </span>
-        </div>
-        <div style={{ ...cellStyle(COL_SUBTOTAL), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, color: subtotal > 0 ? 'var(--gray-800)' : 'var(--gray-300)', fontWeight: subtotal > 0 ? 700 : 400 }}>
-            {subtotal > 0 ? fmtPesos(subtotal) : '—'}
-          </span>
-        </div>
-        <div style={{ ...cellStyle(COL_PAGOS), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, color: pagadoAcum > 0 ? '#10B981' : 'var(--gray-300)', fontWeight: pagadoAcum > 0 ? 600 : 400 }}>
-            {pagadoAcum > 0 ? fmtPesos(pagadoAcum) : '—'}
-          </span>
-        </div>
-        <div style={{ ...cellStyle(COL_SALDO), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-          <span style={{ fontSize: 10, fontWeight: 700, color: subtotal === 0 ? 'var(--gray-300)' : saldo === 0 ? '#10B981' : saldo > 0 ? '#F97316' : '#DC2626' }}>
-            {subtotal > 0 ? fmtPesos(saldo) : '—'}
-          </span>
-        </div>
+        {!hiddenCols.has('fin') && (
+          <div style={{ ...cellStyle(COL_FIN), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, color: 'var(--gray-600)' }}>{fmtShort(tarea.fechaFin)}</span>
+          </div>
+        )}
+        {!hiddenCols.has('duracion') && (
+          <div style={{ ...cellStyle(COL_DIAS), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, color: 'var(--gray-500)' }}>{dur} días</span>
+          </div>
+        )}
+        {!hiddenCols.has('avance') && (
+          <div style={{ ...cellStyle(COL_AVANCE), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <ProgressCell value={avance} />
+          </div>
+        )}
+        {!hiddenCols.has('estado') && (
+          <div style={{ ...cellStyle(COL_ESTADO), display: 'flex', alignItems: 'center', padding: '0 4px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <EstadoBadge estado={estado} />
+          </div>
+        )}
+        {!hiddenCols.has('presupuesto') && (
+          <div style={{ ...cellStyle(COL_PRESUP), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, color: tarea.presupuesto ? 'var(--gray-700)' : 'var(--gray-300)', fontWeight: tarea.presupuesto ? 600 : 400 }}>
+              {tarea.presupuesto ? fmtPesos(tarea.presupuesto) : '—'}
+            </span>
+          </div>
+        )}
+        {!hiddenCols.has('adicionales') && (
+          <div style={{ ...cellStyle(COL_ADIC), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, color: adic > 0 ? '#F97316' : 'var(--gray-300)', fontWeight: adic > 0 ? 600 : 400 }}>
+              {adic > 0 ? fmtPesos(adic) : '—'}
+            </span>
+          </div>
+        )}
+        {!hiddenCols.has('subtotal') && (
+          <div style={{ ...cellStyle(COL_SUBTOTAL), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, color: subtotal > 0 ? 'var(--gray-800)' : 'var(--gray-300)', fontWeight: subtotal > 0 ? 700 : 400 }}>
+              {subtotal > 0 ? fmtPesos(subtotal) : '—'}
+            </span>
+          </div>
+        )}
+        {!hiddenCols.has('pagos') && (
+          <div style={{ ...cellStyle(COL_PAGOS), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, color: pagadoAcum > 0 ? '#10B981' : 'var(--gray-300)', fontWeight: pagadoAcum > 0 ? 600 : 400 }}>
+              {pagadoAcum > 0 ? fmtPesos(pagadoAcum) : '—'}
+            </span>
+          </div>
+        )}
+        {!hiddenCols.has('saldo') && (
+          <div style={{ ...cellStyle(COL_SALDO), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: subtotal === 0 ? 'var(--gray-300)' : saldo === 0 ? '#10B981' : saldo > 0 ? '#F97316' : '#DC2626' }}>
+              {subtotal > 0 ? fmtPesos(saldo) : '—'}
+            </span>
+          </div>
+        )}
         <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: isSubtarea ? 'white' : '#FAFAFA', overflow: 'hidden' }}>
           {months.map((m, i) => (
-            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * ppd), top: 0, bottom: 0, borderLeft: '1px dashed #EBEBEB', pointerEvents: 'none' }} />
+            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px dashed #EBEBEB', pointerEvents: 'none' }} />
           ))}
           {todayX > 0 && todayX < timelineW && (
             <div style={{ position: 'absolute', left: todayX, top: 0, bottom: 0, borderLeft: '2px solid var(--orange)', pointerEvents: 'none', zIndex: 2 }} />
           )}
-          <div style={{ position: 'absolute', left: barX, width: barW, top: '50%', transform: 'translateY(-50%)', height: isSubtarea ? 14 : 20, borderRadius: 4, overflow: 'hidden', background: isSubtarea ? '#FFF7ED' : '#FED7AA', border: `1.5px solid ${barBorder}` }}>
-            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${avance}%`, background: isSubtarea ? '#FED7AA' : etaColor, opacity: 0.85, borderRadius: '3px 0 0 3px' }} />
+          <div style={{ position: 'absolute', left: barX, width: barW, top: '50%', transform: 'translateY(-50%)', height: isSubtarea ? 14 : 20, borderRadius: 4, overflow: 'hidden', background: barBg, border: `1.5px solid ${barBorder}` }}>
+            <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${avance}%`, background: fillColor, opacity: 0.85, borderRadius: '3px 0 0 3px' }} />
             {barW > 30 && (
               <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', paddingLeft: 4, fontSize: 9, fontWeight: 700, color: 'white', textShadow: '0 1px 2px rgba(0,0,0,0.4)', zIndex: 1 }}>
                 {avance}%
@@ -394,23 +458,45 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     )
   }
 
+  const HITO_ROW_H = 32
+  const COL_RESTO  = TABLE_W - COL_NOMBRE - COL_INICIO
+
+  const renderHitoRow = (hito) => {
+    const semaforo = semaforoHito(hito)
+    const x = toPx(hito.fechaPrevista)
+    return (
+      <div key={`hito-${hito.id}`} style={{ display: 'flex', height: HITO_ROW_H, borderBottom: '1px solid var(--gray-200)' }}>
+        <div style={{ ...cellStyle(COL_NOMBRE, true), background: semaforo.bg, display: 'flex', alignItems: 'center', paddingLeft: 10, paddingRight: 8, gap: 4, borderRight: '2px solid var(--gray-200)' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: semaforo.color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            🚩 {hito.nombre}
+          </span>
+        </div>
+        <div style={{ ...cellStyle(COL_INICIO), display: 'flex', alignItems: 'center', padding: '0 4px', background: semaforo.bg }}>
+          <span style={{ fontSize: 10, color: 'var(--gray-600)' }}>{fmtShort(hito.fechaPrevista)}</span>
+        </div>
+        <div style={{ width: COL_RESTO, flexShrink: 0, background: semaforo.bg, display: 'flex', alignItems: 'center', padding: '0 8px' }}>
+          <span style={{ fontSize: 9, fontWeight: 700, color: semaforo.color, background: 'white', padding: '2px 8px', borderRadius: 99 }}>{semaforo.label}</span>
+        </div>
+        <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: semaforo.bg, overflow: 'hidden' }}>
+          {months.map((m, i) => (
+            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px dashed rgba(0,0,0,0.06)', pointerEvents: 'none' }} />
+          ))}
+          <div title={`${hito.nombre} — ${fmtShort(hito.fechaPrevista)}`} style={{ position: 'absolute', left: x - 6, top: '50%', transform: 'translateY(-50%) rotate(45deg)', width: 12, height: 12, background: semaforo.color, border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
+        </div>
+        {structuralMode && <div style={{ width: 32, background: semaforo.bg }} />}
+      </div>
+    )
+  }
+
   return (
     <div ref={scrollRef} data-gantt-scroll style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch', borderRadius: 12, border: '1px solid var(--gray-200)', background: 'white' }}>
       <div data-gantt-content style={{ minWidth: TABLE_W + timelineW + (structuralMode ? 32 : 0) }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 10 }}>
-          <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: ppd >= 5.5 ? '1px solid var(--gray-200)' : '2px solid var(--gray-200)' }}>
+          <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: effectivePpd >= 5.5 ? '1px solid var(--gray-200)' : '2px solid var(--gray-200)' }}>
             {[
               { label: 'Etapa / Tarea', w: COL_NOMBRE, sticky: true },
               { label: 'Inicio',        w: COL_INICIO },
-              { label: 'Fin Est.',      w: COL_FIN },
-              { label: 'Duración',      w: COL_DIAS },
-              { label: 'Avance',        w: COL_AVANCE },
-              { label: 'Estado',        w: COL_ESTADO },
-              { label: 'Presupuesto',   w: COL_PRESUP },
-              { label: 'Adicionales',   w: COL_ADIC },
-              { label: 'Subtotal',      w: COL_SUBTOTAL },
-              { label: 'Pagos',         w: COL_PAGOS },
-              { label: 'Saldo',         w: COL_SALDO },
+              ...visibleCols.map(c => ({ label: c.label, w: COL_W[c.key] })),
             ].map(col => (
               <div key={col.label} style={{
                 ...cellStyle(col.w, col.sticky),
@@ -425,8 +511,8 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
             <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: '#F3F4F6' }}>
               {months.map((m, i) => {
                 const next  = months[i + 1]
-                const left  = Math.max(0, (m - minDate) / 86400000 * ppd)
-                const width = next ? Math.max(0, (next - minDate) / 86400000 * ppd) - left : timelineW - left
+                const left  = Math.max(0, (m - minDate) / 86400000 * effectivePpd)
+                const width = next ? Math.max(0, (next - minDate) / 86400000 * effectivePpd) - left : timelineW - left
                 return (
                   <div key={i} style={{ position: 'absolute', left, width, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', paddingLeft: 4, overflow: 'hidden' }}>
                     {width > 18 && <span style={{ fontSize: 8, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{m.toLocaleDateString('es-CL', { month: 'short', year: '2-digit' })}</span>}
@@ -441,14 +527,14 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
             </div>
             {structuralMode && <div style={{ width: 32, background: '#F3F4F6' }} />}
           </div>
-          {ppd >= 5.5 && (() => {
+          {effectivePpd >= 5.5 && (() => {
             const SUB_H = 20
             const dayInitials = ['D', 'L', 'M', 'M', 'J', 'V', 'S']
-            if (ppd >= 12) {
+            if (effectivePpd >= 12) {
               const days = []
               const cur = new Date(minDate)
               while (cur <= maxDate) {
-                days.push({ num: cur.getDate(), initial: dayInitials[cur.getDay()], left: (cur - minDate) / 86400000 * ppd, isWeekend: cur.getDay() === 0 || cur.getDay() === 6 })
+                days.push({ num: cur.getDate(), initial: dayInitials[cur.getDay()], left: (cur - minDate) / 86400000 * effectivePpd, isWeekend: cur.getDay() === 0 || cur.getDay() === 6 })
                 cur.setDate(cur.getDate() + 1)
               }
               return (
@@ -457,8 +543,8 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
                   <div style={{ width: TABLE_W - COL_NOMBRE, flexShrink: 0, background: '#FAFAFA' }} />
                   <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: '#FAFAFA', overflow: 'hidden' }}>
                     {days.map((d, i) => (
-                      <div key={i} style={{ position: 'absolute', left: d.left, width: ppd, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: d.isWeekend ? '#F3F4F6' : '#FAFAFA' }}>
-                        {ppd > 14 && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gray-400)', lineHeight: 1 }}>{d.num}</span>}
+                      <div key={i} style={{ position: 'absolute', left: d.left, width: effectivePpd, top: 0, bottom: 0, borderLeft: '1px solid var(--gray-200)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: d.isWeekend ? '#F3F4F6' : '#FAFAFA' }}>
+                        {effectivePpd > 14 && <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--gray-400)', lineHeight: 1 }}>{d.num}</span>}
                         <span style={{ fontSize: 7, color: 'var(--gray-400)', lineHeight: 1 }}>{d.initial}</span>
                       </div>
                     ))}
@@ -475,8 +561,8 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
                 for (let d = 1; d <= daysInMonth; d += 7) {
                   const start = new Date(year, month, d)
                   const endDay = Math.min(d + 6, daysInMonth)
-                  const left = Math.max(0, (start - minDate) / 86400000 * ppd)
-                  const width = (endDay - d + 1) * ppd
+                  const left = Math.max(0, (start - minDate) / 86400000 * effectivePpd)
+                  const width = (endDay - d + 1) * effectivePpd
                   weekBlocks.push({ label: `S${weekNum}`, left, width })
                   weekNum++
                 }
@@ -499,6 +585,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
           })()}
         </div>
         <div style={{ position: 'relative' }}>
+          {hitosValidos.map(renderHitoRow)}
           {etapas.map(etapa => {
             const hijos = tareas.filter(t => t.parentId === etapa.id)
             const isExpanded = expandedEtapas.has(etapa.id)
@@ -529,14 +616,15 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
             visibleRows.forEach((t, i) => { rowIdx[t.id] = i })
             const arrows = tareas.filter(t => t.dependeDeId && rowIdx[t.id] !== undefined && rowIdx[t.dependeDeId] !== undefined)
             if (!arrows.length) return null
-            const svgH = visibleRows.length * ROW_H
+            const hitosOffset = hitosValidos.length * HITO_ROW_H
+            const svgH = hitosOffset + visibleRows.length * ROW_H
             return (
               <svg style={{ position: 'absolute', top: 0, left: TABLE_W, pointerEvents: 'none', overflow: 'visible', zIndex: 5 }} width={timelineW} height={svgH}>
                 {arrows.map(dep => {
                   const pred = tareas.find(t => t.id === dep.dependeDeId)
                   if (!pred) return null
-                  const x1 = toPx(pred.fechaFin) + ppd, x2 = toPx(dep.fechaInicio)
-                  const y1 = rowIdx[pred.id] * ROW_H + ROW_H / 2, y2 = rowIdx[dep.id] * ROW_H + ROW_H / 2
+                  const x1 = toPx(pred.fechaFin) + effectivePpd, x2 = toPx(dep.fechaInicio)
+                  const y1 = hitosOffset + rowIdx[pred.id] * ROW_H + ROW_H / 2, y2 = hitosOffset + rowIdx[dep.id] * ROW_H + ROW_H / 2
                   const path = `M ${x1} ${y1} L ${x1 + 10} ${y1} L ${x1 + 10} ${y2} L ${x2} ${y2}`
                   return (
                     <g key={`${pred.id}-${dep.id}`}>
@@ -1323,6 +1411,38 @@ function ModalEliminarCronograma({ nombre, onConfirm, onClose }) {
   )
 }
 
+function ModalExportarPDF({ onConfirm, onClose }) {
+  const [hidden, setHidden] = useState(new Set())
+
+  const toggle = (key) => setHidden(prev => {
+    const s = new Set(prev)
+    s.has(key) ? s.delete(key) : s.add(key)
+    return s
+  })
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16, backdropFilter: 'blur(2px)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div style={{ background: 'white', borderRadius: 16, maxWidth: 400, width: '100%', padding: 28, boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+        <h3 style={{ fontSize: 16, fontWeight: 800, color: 'var(--gray-900)', marginBottom: 4 }}>Exportar a PDF</h3>
+        <p style={{ fontSize: 12, color: 'var(--gray-500)', marginBottom: 16 }}>Elegí qué columnas incluir en el cronograma exportado.</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 9, marginBottom: 22 }}>
+          {PDF_COLUMNAS.map(c => (
+            <label key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13, color: 'var(--gray-700)', cursor: 'pointer', userSelect: 'none' }}>
+              <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggle(c.key)} style={{ width: 16, height: 16, accentColor: 'var(--orange)' }} />
+              {c.label}
+            </label>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '10px 18px', borderRadius: 8, border: '1px solid var(--gray-200)', background: 'white', color: 'var(--gray-700)', cursor: 'pointer', fontWeight: 600, fontSize: 13, fontFamily: 'inherit' }}>Cancelar</button>
+          <button onClick={() => onConfirm(hidden)} style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'var(--orange)', color: 'white', cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(249,115,22,0.4)' }}>⬇ Exportar PDF</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ModalImpacto({ data, onApply, onDismiss }) {
   const { updatedTarea, impactados, tieneCriticas, nuevaFechaFinObra } = data
   const delta = diffCalDias(updatedTarea.fechaFinAnterior, updatedTarea.fechaFin)
@@ -1384,7 +1504,7 @@ function ModalImpacto({ data, onApply, onDismiss }) {
   )
 }
 
-export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor, proyectosArmar }) {
+export default function CronogramaTab({ project, cronogramas, teamMembers, onCreateCronograma, onSaveCronograma, onCargarAvance, onDeleteCronograma, onEditarInforme, isEditor, proyectosArmar, obraHitos = [] }) {
   const [selectedId,      setSelectedId]      = useState(() => cronogramas[0]?.id || null)
   const [toast,           setToast]           = useState('')
   const [showCrearModal,  setShowCrearModal]   = useState(false)
@@ -1399,6 +1519,9 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const [cascadeData,     setCascadeData]      = useState(null)
   const [zoomIdx,         setZoomIdx]          = useState(1)
   const [exportando,      setExportando]       = useState(false)
+  const [showExportModal, setShowExportModal]  = useState(false)
+  const [hiddenCols,      setHiddenCols]       = useState(EMPTY_SET)
+  const [pendingExport,   setPendingExport]    = useState(false)
   const ganttRef = useRef(null)
 
   const ppd       = PPD_LEVELS[zoomIdx].val
@@ -1468,6 +1591,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
 
   const cronograma    = cronogramas.find(c => c.id === selectedId) || cronogramas[0]
   const tareas        = cronograma?.tareas || []
+  const tareasNorm    = normalizarEtapasConFechas(tareas)
   const informes      = cronograma?.informes || []
   const certificados  = cronograma?.certificados || []
   const avanceGeneral = calcAvanceGeneral(tareas)
@@ -1477,6 +1601,11 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     if (!oldTarea) {
       const newId = Math.max(...tareas.map(t => t.id), 0) + 1
       onSaveCronograma(project.id, cronograma.id, { tareas: [...tareas, { ...updatedTarea, id: newId, obraId: project.id }] })
+      setEditingTarea(null); return
+    }
+    if (updatedTarea.parentId === null) {
+      // Las etapas no participan del cascade: sus fechas se recalculan desde las subetapas
+      onSaveCronograma(project.id, cronograma.id, { tareas: tareas.map(t => t.id === updatedTarea.id ? updatedTarea : t) })
       setEditingTarea(null); return
     }
     const datesChanged = oldTarea.fechaFin !== updatedTarea.fechaFin || oldTarea.fechaInicio !== updatedTarea.fechaInicio || oldTarea.duracionDias !== updatedTarea.duracionDias
@@ -1521,7 +1650,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   })
 
   const handleAddEtapa = () => {
-    const fechaInicioSugerida = tareas.reduce((max, t) => (t.fechaFin && t.fechaFin > max) ? t.fechaFin : max, '') || new Date().toISOString().slice(0, 10)
+    const fechaInicioSugerida = tareasNorm.reduce((max, t) => (t.fechaFin && t.fechaFin > max) ? t.fechaFin : max, '') || new Date().toISOString().slice(0, 10)
     setEditingTarea({
       id: null, parentId: null, obraId: project.id,
       nombre: '', tipo: 'etapa', fechaInicio: fechaInicioSugerida,
@@ -1607,6 +1736,19 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     finally { setExportando(false) }
   }
 
+  // Espera a que la tabla se vuelva a renderizar sin las columnas ocultas antes de capturar el PDF
+  useEffect(() => {
+    if (!pendingExport) return
+    setPendingExport(false)
+    exportarPDF().finally(() => setHiddenCols(EMPTY_SET))
+  }, [pendingExport])
+
+  const handleExportarPDF = (hidden) => {
+    setShowExportModal(false)
+    setHiddenCols(hidden)
+    setPendingExport(true)
+  }
+
   const btnStyle = (orange = false, danger = false, blue = false) => ({
     padding: '7px 14px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
     border: orange ? 'none' : blue ? 'none' : danger ? '1px solid #FECACA' : '1px solid var(--gray-200)',
@@ -1657,7 +1799,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
             <button onClick={() => setStructuralMode(true)} style={btnStyle()}>✏️ Editar estructura</button>
             <button onClick={() => setShowAvanceModal(true)} style={btnStyle(true)}>+ Cargar avance</button>
             <button onClick={() => setShowCertModal(true)} style={btnStyle(false, false, true)}>💳 Certificado de pago</button>
-            <button onClick={exportarPDF} disabled={exportando} style={{ ...btnStyle(), opacity: exportando ? 0.6 : 1 }}>{exportando ? 'Exportando…' : '⬇ Exportar PDF'}</button>
+            <button onClick={() => setShowExportModal(true)} disabled={exportando} style={{ ...btnStyle(), opacity: exportando ? 0.6 : 1 }}>{exportando ? 'Exportando…' : '⬇ Exportar PDF'}</button>
             <button onClick={() => setShowDeleteModal(true)} style={btnStyle(false, true)}>🗑 Eliminar cronograma</button>
           </>
         ))}
@@ -1671,7 +1813,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
         <div ref={ganttRef} style={{ flex: 1, minWidth: 0 }}>
           <TablaGantt
-            tareas={tareas}
+            tareas={tareasNorm}
             structuralMode={structuralMode}
             onClickTarea={isEditor ? setEditingTarea : () => {}}
             onDeleteTarea={handleDeleteTarea}
@@ -1680,32 +1822,35 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
             ppd={ppd}
             onZoomChange={setZoomIdx}
             certificados={certificados}
+            hitos={obraHitos}
+            hiddenCols={hiddenCols}
           />
         </div>
-        <StatsPanel tareas={tareas} avanceGeneral={avanceGeneral} informes={informes} certificados={certificados} />
+        <StatsPanel tareas={tareasNorm} avanceGeneral={avanceGeneral} informes={informes} certificados={certificados} />
       </div>
 
-      <HistorialInformes informes={informes} tareas={tareas} onEditar={setEditingInforme} onEliminarInforme={isEditor ? handleEliminarInforme : null} isEditor={isEditor} />
+      <HistorialInformes informes={informes} tareas={tareasNorm} onEditar={setEditingInforme} onEliminarInforme={isEditor ? handleEliminarInforme : null} isEditor={isEditor} />
       <HistorialCertificados certificados={certificados} isEditor={isEditor} onEditar={isEditor ? setEditingCert : null} onGestionarPago={isEditor ? setGestionandoCert : null} onEliminarCertificado={isEditor ? handleEliminarCertificado : null} />
 
       {showCrearModal && <ModalCrearCronograma project={project} teamMembers={teamMembers} onClose={() => setShowCrearModal(false)} onCrear={handleCreateCronogramaLocal} />}
       {showAvanceModal && <ModalCargarAvance project={project} cronograma={cronograma} numero={informes.length + 1} teamMembers={teamMembers} certificados={certificados} onGuardar={(pid, informe, tareasActualizadas, certData) => handleCargarAvanceLocal(pid, cronograma.id, informe, tareasActualizadas, certData)} onClose={() => setShowAvanceModal(false)} />}
       {toast && <div style={{ position: 'fixed', bottom: 28, right: 28, background: '#1A1A1A', color: 'white', padding: '12px 20px', borderRadius: 10, fontSize: 13, fontWeight: 600, zIndex: 500, boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }}>{toast}</div>}
-      {showCertModal && <ModalCertificado tareas={tareas} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
-      {editingCert && <ModalCertificado tareas={tareas} certificados={certificados} numero={editingCert.numero} teamMembers={teamMembers} editCert={editingCert} onClose={() => setEditingCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setEditingCert(null) }} />}
+      {showCertModal && <ModalCertificado tareas={tareasNorm} certificados={certificados} numero={certificados.length + 1} teamMembers={teamMembers} onClose={() => setShowCertModal(false)} onGuardar={handleGuardarCertificado} />}
+      {editingCert && <ModalCertificado tareas={tareasNorm} certificados={certificados} numero={editingCert.numero} teamMembers={teamMembers} editCert={editingCert} onClose={() => setEditingCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setEditingCert(null) }} />}
       {gestionandoCert && <ModalGestionCertificado cert={gestionandoCert} onClose={() => setGestionandoCert(null)} onGuardar={cert => { handleEditarCertificado(cert); setGestionandoCert(null) }} />}
       {editingTarea && (
         <ModalEditarEtapa
           tarea={editingTarea}
-          tareas={tareas}
+          tareas={tareasNorm}
           onClose={() => setEditingTarea(null)}
           onSave={handleSaveTareaFromModal}
           onAgregarSubetapa={handleAddSubtarea}
           onDelete={handleDeleteTarea}
         />
       )}
-      {editingInforme && <ModalEditarInforme informe={editingInforme} tareas={tareas} informes={informes} onClose={() => setEditingInforme(null)} onSave={handleEditarInformeLocal} />}
+      {editingInforme && <ModalEditarInforme informe={editingInforme} tareas={tareasNorm} informes={informes} onClose={() => setEditingInforme(null)} onSave={handleEditarInformeLocal} />}
       {showDeleteModal && <ModalEliminarCronograma nombre={cronograma.nombre} onClose={() => setShowDeleteModal(false)} onConfirm={() => { onDeleteCronograma(project.id, cronograma.id); setShowDeleteModal(false) }} />}
+      {showExportModal && <ModalExportarPDF onClose={() => setShowExportModal(false)} onConfirm={handleExportarPDF} />}
       {cascadeData && <ModalImpacto data={cascadeData} onApply={handleApplyCascade} onDismiss={handleDismissCascade} />}
     </div>
   )

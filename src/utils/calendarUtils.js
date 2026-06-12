@@ -55,6 +55,27 @@ export function addBusinessDays(fechaStr, n) {
   return cur.toISOString().split('T')[0]
 }
 
+// Calcula el rango de fechas de una etapa a partir de sus subetapas
+export function calcRangoEtapa(tareas, etapaId) {
+  const hijos = tareas.filter(t => t.parentId === etapaId && t.fechaInicio && t.fechaFin)
+  if (!hijos.length) {
+    const etapa = tareas.find(t => t.id === etapaId)
+    const fechaInicio  = etapa?.fechaInicio || ''
+    const duracionDias = etapa?.duracionDias ?? 0
+    const fechaFin     = etapa?.fechaFin || (fechaInicio && duracionDias > 0 ? calcFechaFin(fechaInicio, duracionDias) : '')
+    return { fechaInicio, fechaFin, duracionDias }
+  }
+  const fechaInicio = hijos.reduce((min, t) => t.fechaInicio < min ? t.fechaInicio : min, hijos[0].fechaInicio)
+  const fechaFin    = hijos.reduce((max, t) => t.fechaFin > max ? t.fechaFin : max, hijos[0].fechaFin)
+  return { fechaInicio, fechaFin, duracionDias: calcDuracionHabil(fechaInicio, fechaFin) }
+}
+
+// Devuelve una copia de tareas donde las etapas (parentId null) tienen sus fechas
+// recalculadas a partir del rango de fechas de sus subetapas
+export function normalizarEtapasConFechas(tareas) {
+  return tareas.map(t => t.parentId !== null ? t : { ...t, ...calcRangoEtapa(tareas, t.id) })
+}
+
 // Calcula el corrimiento en cadena dado una tarea modificada
 // Devuelve { impactados: [...], updatedMap: Map<id, tarea> }
 export function computeCascade(tareas, changedTarea) {

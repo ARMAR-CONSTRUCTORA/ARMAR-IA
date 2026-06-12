@@ -6,6 +6,8 @@ function fmtLong(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
+const ETAPA_COLORS = ['#F97316', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899', '#EAB308', '#06B6D4', '#6B7280']
+
 const inputStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 8,
   border: '1px solid var(--gray-200)', fontSize: 13,
@@ -89,6 +91,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
     tipoVinculo:    tarea?.tipoVinculo  || 'Fin a inicio',
     desfaseDias:    String(tarea?.desfaseDias ?? 0),
     presupuestoRaw: tarea?.presupuesto != null ? Number(tarea.presupuesto).toLocaleString('es-AR') : '',
+    color:          tarea?.color || ETAPA_COLORS[0],
   })
 
   const [adicionales, setAdicionales] = useState(
@@ -108,10 +111,28 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
     ? calcFechaFin(form.fechaInicio, Number(form.duracionDias))
     : ''
 
-  const canSave = form.nombre.trim() && form.fechaInicio && Number(form.duracionDias) > 0
+  const canSave = isSubtarea
+    ? form.nombre.trim() && form.fechaInicio && Number(form.duracionDias) > 0
+    : form.nombre.trim()
 
   const handleSave = () => {
     if (!canSave) return
+    if (!isSubtarea) {
+      // Las etapas no tienen fechas/duración/dependencia editables: se calculan desde las subetapas
+      onSave({
+        ...tarea,
+        nombre:       form.nombre,
+        color:        form.color,
+        pesoRelativo: Number(form.pesoRelativo),
+        presupuesto:  parseMiles(form.presupuestoRaw),
+        adicionales:  adicionales.map(a => ({
+          id:     a.id,
+          motivo: a.motivo || '',
+          monto:  parseMiles(a.montoRaw),
+        })),
+      })
+      return
+    }
     onSave({
       ...tarea,
       ...form,
@@ -179,21 +200,61 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
                 onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))} />
             </Field>
 
-            <Field label="Fecha de inicio" hint="Días hábiles (lun–vie, sin feriados)">
-              <input type="date" style={inputStyle} value={form.fechaInicio}
-                onChange={e => setForm(f => ({ ...f, fechaInicio: e.target.value }))} />
-            </Field>
+            {isSubtarea ? (
+              <>
+                <Field label="Fecha de inicio" hint="Días hábiles (lun–vie, sin feriados)">
+                  <input type="date" style={inputStyle} value={form.fechaInicio}
+                    onChange={e => setForm(f => ({ ...f, fechaInicio: e.target.value }))} />
+                </Field>
 
-            <Field label="Duración (días hábiles)">
-              <input type="number" min={1} style={inputStyle} value={form.duracionDias}
-                onChange={e => setForm(f => ({ ...f, duracionDias: e.target.value }))} />
-            </Field>
+                <Field label="Duración (días hábiles)">
+                  <input type="number" min={1} style={inputStyle} value={form.duracionDias}
+                    onChange={e => setForm(f => ({ ...f, duracionDias: e.target.value }))} />
+                </Field>
 
-            <Field label="Fin estimado" hint="Calculado desde inicio + duración hábiles">
-              <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none' }}>
-                {fechaFin ? fmtLong(fechaFin) : '—'}
-              </div>
-            </Field>
+                <Field label="Fin estimado" hint="Calculado desde inicio + duración hábiles">
+                  <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none' }}>
+                    {fechaFin ? fmtLong(fechaFin) : '—'}
+                  </div>
+                </Field>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <Field label="Inicio" hint="Según subetapas">
+                      <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none' }}>
+                        {tarea?.fechaInicio ? fmtLong(tarea.fechaInicio) : '—'}
+                      </div>
+                    </Field>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Field label="Fin" hint="Según subetapas">
+                      <div style={{ ...inputStyle, background: '#F9FAFB', color: 'var(--gray-500)', cursor: 'default', userSelect: 'none' }}>
+                        {tarea?.fechaFin ? fmtLong(tarea.fechaFin) : '—'}
+                      </div>
+                    </Field>
+                  </div>
+                </div>
+
+                <Field label="Color de etapa" hint="Las subetapas heredan una versión más clara">
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {ETAPA_COLORS.map(c => (
+                      <button
+                        key={c} type="button"
+                        onClick={() => setForm(f => ({ ...f, color: c }))}
+                        aria-label={c}
+                        style={{
+                          width: 26, height: 26, borderRadius: '50%', background: c, cursor: 'pointer', padding: 0,
+                          border: form.color === c ? '2px solid var(--gray-800)' : '2px solid white',
+                          boxShadow: form.color === c ? '0 0 0 2px ' + c + '55' : '0 0 0 1px var(--gray-200)',
+                        }}
+                      />
+                    ))}
+                  </div>
+                </Field>
+              </>
+            )}
 
             <Field label="Incidencia %">
               <input type="number" min={0} max={100} style={inputStyle} value={form.pesoRelativo}
@@ -295,37 +356,39 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
               )}
             </div>
 
-            <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
-                Dependencia
-              </div>
-              <Field label="Predecesora">
-                <select style={inputStyle}
-                  value={form.dependeDeId ?? ''}
-                  onChange={e => {
-                    const predId = e.target.value ? Number(e.target.value) : null
-                    const newFI = predId ? calcFechaInicioDesde(predId, form.desfaseDias) : form.fechaInicio
-                    setForm(f => ({ ...f, dependeDeId: predId, fechaInicio: newFI }))
-                  }}>
-                  <option value="">Ninguna</option>
-                  {opcionesPredecesora.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.parentId !== null ? '    └ ' : ''}{t.nombre}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {form.dependeDeId && (
-                <Field label="Días de desfase" hint="Días hábiles — se suman al fin de la predecesora">
-                  <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
+            {isSubtarea && (
+              <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>
+                  Dependencia
+                </div>
+                <Field label="Predecesora">
+                  <select style={inputStyle}
+                    value={form.dependeDeId ?? ''}
                     onChange={e => {
-                      const desfase = e.target.value
-                      const newFI = calcFechaInicioDesde(form.dependeDeId, desfase)
-                      setForm(f => ({ ...f, desfaseDias: desfase, fechaInicio: newFI }))
-                    }} />
+                      const predId = e.target.value ? Number(e.target.value) : null
+                      const newFI = predId ? calcFechaInicioDesde(predId, form.desfaseDias) : form.fechaInicio
+                      setForm(f => ({ ...f, dependeDeId: predId, fechaInicio: newFI }))
+                    }}>
+                    <option value="">Ninguna</option>
+                    {opcionesPredecesora.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.parentId !== null ? '    └ ' : ''}{t.nombre}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
-              )}
-            </div>
+                {form.dependeDeId && (
+                  <Field label="Días de desfase" hint="Días hábiles — se suman al fin de la predecesora">
+                    <input type="number" min={0} style={inputStyle} value={form.desfaseDias}
+                      onChange={e => {
+                        const desfase = e.target.value
+                        const newFI = calcFechaInicioDesde(form.dependeDeId, desfase)
+                        setForm(f => ({ ...f, desfaseDias: desfase, fechaInicio: newFI }))
+                      }} />
+                  </Field>
+                )}
+              </div>
+            )}
           </div>
 
           <div style={{ padding: '12px 20px', borderTop: '1px solid var(--gray-200)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>

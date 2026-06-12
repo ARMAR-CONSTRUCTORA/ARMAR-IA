@@ -234,12 +234,6 @@ function App() {
     await Promise.all([deleteHito(id), deleteCalendarioEvento(id)])
   }
 
-  const handleMarcarHitoCumplido = async (id, fechaReal) => {
-    const hito = obraHitos.find(h => h.id === id)
-    if (!hito) return
-    await handleGuardarHito({ ...hito, estado: 'cumplido', fechaReal })
-  }
-
   const handleSave = async (data) => {
     if (editingProject) {
       const updated = { ...data, id: editingProject.id }
@@ -395,17 +389,17 @@ function App() {
     }
   }
 
-  const handleAddMember = async (name, category) => {
-    const member = { id: `m-${Date.now()}`, name, category }
+  const handleAddMember = async (name, category, telefono, email) => {
+    const member = { id: `m-${Date.now()}`, name, category, telefono: telefono || '', email: email || '' }
     setTeamMembers(prev => [...prev, member])
     await upsertTeamMember(member)
   }
 
-  const handleEditMember = async (id, name) => {
+  const handleEditMember = async (id, changes) => {
     const existing = teamMembers.find(m => m.id === id)
     if (!existing) return
 
-    const updated = { ...existing, name }
+    const updated = { ...existing, ...changes }
     setTeamMembers(prev => prev.map(m => m.id === id ? updated : m))
     await upsertTeamMember(updated)
   }
@@ -436,7 +430,6 @@ function App() {
             obraHitos={obraHitos}
             onGuardarHito={handleGuardarHito}
             onEliminarHito={handleEliminarHito}
-            onMarcarHitoCumplido={handleMarcarHitoCumplido}
             onAdd={openAdd}
             onNavigate={handleNavigate}
             isEditor={isEditor}
@@ -454,7 +447,6 @@ function App() {
             obraHitos={obraHitos}
             onGuardarHito={handleGuardarHito}
             onEliminarHito={handleEliminarHito}
-            onMarcarHitoCumplido={handleMarcarHitoCumplido}
             onAdd={openAdd}
             onEdit={openEdit}
             onDelete={setDeleteTarget}
@@ -469,7 +461,7 @@ function App() {
         )
 
       case 'cronogramas':
-        return <CronogramasPage projects={projects} cronogramas={cronogramas} proyectosArmar={proyectosArmar} />
+        return <CronogramasPage projects={projects} cronogramas={cronogramas} proyectosArmar={proyectosArmar} obraHitos={obraHitos} />
 
       case 'presupuestos':
         return (
