@@ -9,6 +9,7 @@ import {
   insertChecklistItems,
   loadPresupuestosResumen,
   upsertCalendarioEvento,
+  supabase,
 } from '../lib/supabase'
 
 // ─── Constantes de color ──────────────────────────────────────────────────────
@@ -1039,9 +1040,266 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
   )
 }
 
+// ─── Listado de compras ───────────────────────────────────────────────────────
+
+const COMPRAS_COLS = [
+  { key: 'item',            label: 'Item',              w: 50,  type: 'text' },
+  { key: 'foto',            label: 'Foto',              w: 80,  type: 'imagen' },
+  { key: 'ubicacion',       label: 'Ubicación',         w: 130, type: 'text' },
+  { key: 'categoria',       label: 'Categoría',         w: 120, type: 'text' },
+  { key: 'marca',           label: 'Marca',             w: 90,  type: 'text' },
+  { key: 'modelo',          label: 'Modelo',            w: 160, type: 'text' },
+  { key: 'unidad',          label: 'Un.',               w: 45,  type: 'text' },
+  { key: 'cant',            label: 'Cant.',             w: 55,  type: 'number' },
+  { key: 'cajasUn',         label: 'Cajas/Un.',         w: 70,  type: 'number' },
+  { key: 'definido',        label: 'Definido',          w: 65,  type: 'check' },
+  { key: 'fechaDefinicion', label: 'F. definición',     w: 100, type: 'date' },
+  { key: 'comprado',        label: 'Comprado',          w: 70,  type: 'check' },
+  { key: 'fechaEntrega',    label: 'F. entrega',        w: 90,  type: 'date' },
+  { key: 'link',            label: 'Link',              w: 55,  type: 'link' },
+  { key: 'precioUn',        label: '$un.',              w: 80,  type: 'precio' },
+  { key: 'precioTot',       label: '$tot',              w: 90,  type: 'calc' },
+  { key: 'observaciones',   label: 'Observaciones',     w: 150, type: 'text' },
+]
+
+function newComprasRow() {
+  return { item:'', foto:'', ubicacion:'', categoria:'', marca:'', modelo:'', unidad:'', cant:'', cajasUn:'', definido:false, fechaDefinicion:'', comprado:false, fechaEntrega:'', link:'', precioUn:'', observaciones:'' }
+}
+
+function isComprasHeader(row) {
+  const item = String(row.item ?? '').trim()
+  return /^\d+$/.test(item) && !row.marca && !row.modelo && !row.cant
+}
+
+function calcTot(row) {
+  const p = parseFloat(String(row.precioUn).replace(/\./g,'').replace(',','.')) || 0
+  const c = parseFloat(String(row.cant).replace(',','.')) || 0
+  if (!p || !c) return ''
+  return '$' + Math.round(p * c).toLocaleString('es-AR')
+}
+
+function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
+  const [rows,    setRows]    = useState(comprasData?.rows || [])
+  const [saving,  setSaving]  = useState(false)
+  const [dirty,   setDirty]   = useState(false)
+  const [uploading, setUploading] = useState({})
+  const fileRefs = useRef({})
+
+  const save = useCallback(async (r) => {
+    setSaving(true)
+    await onSave({ rows: r })
+    setSaving(false)
+    setDirty(false)
+  }, [onSave])
+
+  const updateRow = (ri, key, val) => {
+    setRows(prev => prev.map((r, i) => i === ri ? { ...r, [key]: val } : r))
+    setDirty(true)
+  }
+
+  const addRow = () => { setRows(prev => [...prev, newComprasRow()]); setDirty(true) }
+  const deleteRow = (ri) => { setRows(prev => prev.filter((_, i) => i !== ri)); setDirty(true) }
+  const clearAll = () => { if (window.confirm('¿Eliminar el listado completo?')) { setRows([]); setDirty(true) } }
+
+  const handleImageUpload = async (ri, file) => {
+    if (!file) return
+    const ext  = file.name.split('.').pop()
+    const path = `${proyId}/${Date.now()}-${ri}.${ext}`
+    setUploading(prev => ({ ...prev, [ri]: true }))
+    const { error } = await supabase.storage.from('compras-imagenes').upload(path, file, { upsert: true })
+    if (!error) {
+      const { data: urlData } = supabase.storage.from('compras-imagenes').getPublicUrl(path)
+      updateRow(ri, 'foto', urlData.publicUrl)
+    }
+    setUploading(prev => ({ ...prev, [ri]: false }))
+  }
+
+  const isEmpty = !rows.length
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        {isEditor && (
+          <>
+            <button onClick={addRow}
+              style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              + Fila
+            </button>
+            {!isEmpty && (
+              <button onClick={clearAll}
+                style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #FCA5A5', background: 'white', color: red, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                🗑 Eliminar listado
+              </button>
+            )}
+            {dirty && (
+              <button onClick={() => save(rows)} disabled={saving}
+                style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: green, color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+                {saving ? 'Guardando…' : '✓ Guardar cambios'}
+              </button>
+            )}
+          </>
+        )}
+        {!isEmpty && (
+          <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 4 }}>
+            {rows.filter(r => r.comprado).length}/{rows.filter(r => !isComprasHeader(r)).length} comprados
+          </span>
+        )}
+      </div>
+
+      {isEmpty ? (
+        <div style={{ padding: '32px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
+          {isEditor ? 'Agregá filas para armar el listado de compras.' : 'Sin listado de compras cargado.'}
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${border}` }}>
+          <table style={{ borderCollapse: 'collapse', fontSize: 11 }}>
+            <thead>
+              <tr style={{ background: '#F3F4F6' }}>
+                {COMPRAS_COLS.map(col => (
+                  <th key={col.key} style={{ padding: '7px 8px', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, fontWeight: 700, color: dark, whiteSpace: 'nowrap', minWidth: col.w, width: col.w, textAlign: col.type === 'number' || col.type === 'precio' || col.type === 'calc' ? 'right' : 'left' }}>
+                    {col.label}
+                  </th>
+                ))}
+                {isEditor && <th style={{ width: 28, borderBottom: `1px solid ${border}` }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => {
+                const isHeader = isComprasHeader(row)
+                const comprado = row.comprado
+                return (
+                  <tr key={ri}
+                    style={{ borderBottom: `1px solid ${border}`, background: isHeader ? '#1A1A2E' : comprado ? '#F0FDF4' : 'white' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = isHeader ? '#2A2A3E' : comprado ? '#DCFCE7' : '#FAFAF9' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = isHeader ? '#1A1A2E' : comprado ? '#F0FDF4' : 'white' }}>
+                    {COMPRAS_COLS.map(col => {
+                      const val = row[col.key] ?? ''
+                      const cellStyle = { padding: '4px 6px', borderRight: `1px solid ${isHeader ? '#333' : border}`, verticalAlign: 'middle', minWidth: col.w, width: col.w }
+
+                      if (isHeader && col.key !== 'item' && col.key !== 'categoria') {
+                        return <td key={col.key} style={cellStyle} />
+                      }
+
+                      if (col.type === 'imagen') {
+                        return (
+                          <td key={col.key} style={{ ...cellStyle, textAlign: 'center' }}>
+                            {val ? (
+                              <div style={{ position: 'relative', display: 'inline-block' }}>
+                                <img src={val} alt="" style={{ width: 52, height: 40, objectFit: 'contain', borderRadius: 4, border: `1px solid ${border}`, display: 'block' }} />
+                                {isEditor && (
+                                  <button onClick={() => fileRefs.current[ri]?.click()}
+                                    style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', border: 'none', borderRadius: 4, cursor: 'pointer', color: 'white', fontSize: 13, opacity: 0, transition: 'opacity 0.15s' }}
+                                    onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                                    onMouseLeave={e => e.currentTarget.style.opacity = '0'}>✎</button>
+                                )}
+                              </div>
+                            ) : isEditor ? (
+                              <button onClick={() => fileRefs.current[ri]?.click()}
+                                disabled={uploading[ri]}
+                                style={{ width: 52, height: 40, borderRadius: 6, border: `1px dashed ${border}`, background: '#FAFAF9', color: '#9CA3AF', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {uploading[ri] ? '…' : '+'}
+                              </button>
+                            ) : null}
+                            {isEditor && (
+                              <input type="file" accept="image/*" style={{ display: 'none' }}
+                                ref={el => fileRefs.current[ri] = el}
+                                onChange={e => handleImageUpload(ri, e.target.files?.[0])} />
+                            )}
+                          </td>
+                        )
+                      }
+
+                      if (col.type === 'check') {
+                        return (
+                          <td key={col.key} style={{ ...cellStyle, textAlign: 'center' }}>
+                            {isEditor ? (
+                              <input type="checkbox" checked={!!val} onChange={e => updateRow(ri, col.key, e.target.checked)}
+                                style={{ width: 15, height: 15, cursor: 'pointer', accentColor: green }} />
+                            ) : val ? (
+                              <span style={{ color: green, fontWeight: 700 }}>✓</span>
+                            ) : <span style={{ color: '#D1D5DB' }}>—</span>}
+                          </td>
+                        )
+                      }
+
+                      if (col.type === 'link') {
+                        return (
+                          <td key={col.key} style={{ ...cellStyle, textAlign: 'center' }}>
+                            {isEditor ? (
+                              <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
+                                placeholder="URL"
+                                style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: blue, fontFamily: 'inherit', outline: 'none' }} />
+                            ) : val ? (
+                              <a href={val} target="_blank" rel="noreferrer"
+                                style={{ color: blue, fontWeight: 700, fontSize: 11, textDecoration: 'none' }}>
+                                🔗
+                              </a>
+                            ) : null}
+                          </td>
+                        )
+                      }
+
+                      if (col.type === 'calc') {
+                        const tot = calcTot(row)
+                        return (
+                          <td key={col.key} style={{ ...cellStyle, textAlign: 'right', color: tot ? dark : '#D1D5DB', fontWeight: tot ? 700 : 400 }}>
+                            {tot || '—'}
+                          </td>
+                        )
+                      }
+
+                      if (col.type === 'date') {
+                        return (
+                          <td key={col.key} style={cellStyle}>
+                            {isEditor ? (
+                              <input type="date" value={val}
+                                onChange={e => updateRow(ri, col.key, e.target.value)}
+                                style={{ border: 'none', background: 'transparent', fontSize: 11, color: isHeader ? 'white' : dark, fontFamily: 'inherit', outline: 'none', width: '100%' }} />
+                            ) : val ? (
+                              <span>{new Date(val + 'T00:00:00').toLocaleDateString('es-AR')}</span>
+                            ) : null}
+                          </td>
+                        )
+                      }
+
+                      // text / number / precio
+                      const isNum = col.type === 'number' || col.type === 'precio'
+                      const isItemCol = col.key === 'item'
+                      const isCatCol  = col.key === 'categoria'
+                      const textColor = isHeader ? 'white' : dark
+                      const fontW     = isHeader && (isItemCol || isCatCol) ? 800 : 400
+                      return (
+                        <td key={col.key} style={{ ...cellStyle, textAlign: isNum ? 'right' : 'left' }}>
+                          {isEditor ? (
+                            <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
+                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
+                          ) : (
+                            <span style={{ color: textColor, fontWeight: fontW }}>{val}</span>
+                          )}
+                        </td>
+                      )
+                    })}
+                    {isEditor && (
+                      <td style={{ textAlign: 'center', padding: 3, borderRight: 'none' }}>
+                        <button onClick={() => deleteRow(ri)}
+                          style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 12, padding: 0 }}>🗑</button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate, onSaveDoc }) {
+function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate, onSaveDoc, onSaveCompras }) {
   const [activeTab, setActiveTab] = useState('checklist')
   const estadoMeta   = ESTADO_COLORS[p.estadoGeneral] || ESTADO_COLORS['En análisis']
   const avance       = checklistItems ? calcAvanceTotal(checklistItems, p.tipoEncargo) : (p.avanceTotal ?? 0)
@@ -1174,6 +1432,7 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
             {[
               { key: 'checklist',     label: 'Checklist' },
               { key: 'documentacion', label: 'Documentación' },
+              { key: 'compras',       label: 'Listado de compras' },
             ].map(tab => (
               <button key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -1219,6 +1478,17 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
                 isEditor={isEditor}
                 onSave={docData => onSaveDoc(p.id, docData)}
                 proyNombre={p.nombre}
+              />
+            )}
+
+            {activeTab === 'compras' && (
+              <TablaCompras
+                key={p.id + '-compras'}
+                comprasData={p.compras}
+                isEditor={isEditor}
+                proyId={p.id}
+                proyNombre={p.nombre}
+                onSave={data => onSaveCompras(p.id, data)}
               />
             )}
           </div>
@@ -1318,6 +1588,13 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
     if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
   }
 
+  const handleSaveCompras = async (proyId, data) => {
+    const proy = proyectos.find(p => p.id === proyId)
+    if (!proy) return
+    const updated = await upsertProyectoArmar({ ...proy, compras: data })
+    if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
+  }
+
   const handleUpdateItem = async (item) => {
     const updated = await upsertChecklistItem(item)
     if (!updated) return
@@ -1405,6 +1682,7 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
               cronogramas={cronogramas}
               onNavigate={onNavigate}
               onSaveDoc={handleSaveDoc}
+              onSaveCompras={handleSaveCompras}
             />
           ))}
         </div>

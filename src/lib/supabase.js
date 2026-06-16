@@ -660,6 +660,7 @@ function fromDbProyectoArmar(row) {
     linkDocumentacion:           row.link_documentacion            || '',
     avanceTotal:                 row.avance_total                  ?? 0,
     documentacion:               row.documentacion                 ?? null,
+    compras:                     row.compras                       ?? null,
   }
 }
 
@@ -686,6 +687,7 @@ function toDbProyectoArmar(p) {
     link_documentacion:          p.linkDocumentacion             ?? null,
     avance_total:                p.avanceTotal                   ?? 0,
     documentacion:               p.documentacion                 ?? null,
+    compras:                     p.compras                       ?? null,
   }
 }
 
