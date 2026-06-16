@@ -714,18 +714,123 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
 
 // ─── Tabla de documentación ───────────────────────────────────────────────────
 
-function TablaDocumentacion({ docData, isEditor, onSave }) {
-  const [headers, setHeaders] = useState(docData?.headers || [])
-  const [rows,    setRows]    = useState(docData?.rows    || [])
-  const [saving,  setSaving]  = useState(false)
-  const [dirty,   setDirty]   = useState(false)
+const REVISION_OPTIONS = ['', 'R1', 'R2', 'R3', 'R4', 'R5']
+const REVISION_COLORS  = { R1: '#2563EB', R2: '#7C3AED', R3: '#D97706', R4: '#DC2626', R5: '#059669' }
+
+function isRevisionCol(header) {
+  return /revisi[oó]n/i.test(header)
+}
+function isFechaCol(header) {
+  return /fecha/i.test(header)
+}
+
+function excelSerialToDate(v) {
+  if (v instanceof Date) return v
+  const n = Number(v)
+  if (!isNaN(n) && n > 40000 && n < 60000) {
+    return new Date(Math.round((n - 25569) * 86400 * 1000))
+  }
+  return null
+}
+
+function formatDate(v) {
+  const d = excelSerialToDate(v)
+  if (!d) return String(v ?? '')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const yyyy = d.getUTCFullYear()
+  return `${dd}/${mm}/${yyyy}`
+}
+
+function buildChangelog(prevHeaders, prevRows, nextHeaders, nextRows) {
+  const changes = []
+  const nameCol = 0
+  nextRows.forEach((row, ri) => {
+    const prev = prevRows[ri]
+    if (!prev) { changes.push({ doc: row[nameCol] || `Fila ${ri + 1}`, tipo: 'nueva_fila' }); return }
+    row.forEach((cell, ci) => {
+      if (String(cell) !== String(prev[ci] ?? '')) {
+        changes.push({
+          doc:    row[nameCol] || `Fila ${ri + 1}`,
+          col:    nextHeaders[ci] || `Col ${ci + 1}`,
+          antes:  prev[ci] ?? '',
+          despues: cell,
+        })
+      }
+    })
+  })
+  if (prevRows.length > nextRows.length) {
+    for (let ri = nextRows.length; ri < prevRows.length; ri++) {
+      changes.push({ doc: prevRows[ri][nameCol] || `Fila ${ri + 1}`, tipo: 'fila_eliminada' })
+    }
+  }
+  return changes
+}
+
+function formatChangelogText(changes, proyNombre) {
+  const fecha = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  const lines = [`*Actualización de documentación — ${proyNombre}*`, `_${fecha}_`, '']
+  changes.forEach(c => {
+    if (c.tipo === 'nueva_fila')      lines.push(`➕ Nuevo: ${c.doc}`)
+    else if (c.tipo === 'fila_eliminada') lines.push(`❌ Eliminado: ${c.doc}`)
+    else lines.push(`📝 ${c.doc} · ${c.col}: ${c.antes || '—'} → ${c.despues || '—'}`)
+  })
+  return lines.join('\n')
+}
+
+function ModalChangelog({ changes, proyNombre, onClose }) {
+  const texto = formatChangelogText(changes, proyNombre)
+  const handleWA = () => {
+    window.open('https://wa.me/?text=' + encodeURIComponent(texto), '_blank')
+  }
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400, padding: 16 }}>
+      <div style={{ background: 'white', borderRadius: 14, maxWidth: 480, width: '100%', padding: '24px', boxShadow: '0 16px 48px rgba(0,0,0,0.2)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 800, color: dark }}>Informe de cambios</h3>
+          <button onClick={onClose} style={{ border: 'none', background: 'none', fontSize: 18, cursor: 'pointer', color: mid }}>×</button>
+        </div>
+        {changes.length === 0 ? (
+          <p style={{ fontSize: 13, color: '#9CA3AF', textAlign: 'center', padding: '16px 0' }}>Sin cambios detectados.</p>
+        ) : (
+          <>
+            <div style={{ background: '#F9FAFB', border: `1px solid ${border}`, borderRadius: 8, padding: '12px 14px', marginBottom: 16, maxHeight: 280, overflowY: 'auto' }}>
+              {changes.map((c, i) => (
+                <div key={i} style={{ fontSize: 12, color: dark, lineHeight: 1.7, borderBottom: i < changes.length - 1 ? `1px solid ${border}` : 'none', padding: '4px 0' }}>
+                  {c.tipo === 'nueva_fila'       && <span><span style={{ color: green, fontWeight: 700 }}>➕ Nuevo:</span> {c.doc}</span>}
+                  {c.tipo === 'fila_eliminada'   && <span><span style={{ color: red, fontWeight: 700 }}>❌ Eliminado:</span> {c.doc}</span>}
+                  {!c.tipo && <span><span style={{ color: orange, fontWeight: 700 }}>📝 {c.doc}</span> · <span style={{ color: mid }}>{c.col}:</span> <span style={{ color: red }}>{c.antes || '—'}</span> → <span style={{ color: green }}>{c.despues || '—'}</span></span>}
+                </div>
+              ))}
+            </div>
+            <button onClick={handleWA}
+              style={{ width: '100%', padding: '11px 0', borderRadius: 9, border: 'none', background: '#25D366', color: 'white', fontWeight: 800, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              📲 Enviar por WhatsApp
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
+  const [headers,   setHeaders]   = useState(docData?.headers || [])
+  const [rows,      setRows]      = useState(docData?.rows    || [])
+  const [saving,    setSaving]    = useState(false)
+  const [dirty,     setDirty]     = useState(false)
+  const [changelog, setChangelog] = useState(null)
+  const prevRef = useRef({ headers: docData?.headers || [], rows: docData?.rows || [] })
   const fileRef = useRef()
 
   const save = useCallback(async (h, r) => {
+    const changes = buildChangelog(prevRef.current.headers, prevRef.current.rows, h, r)
     setSaving(true)
     await onSave({ headers: h, rows: r })
     setSaving(false)
     setDirty(false)
+    prevRef.current = { headers: h, rows: r }
+    setChangelog(changes)
   }, [onSave])
 
   const handleFile = async (e) => {
@@ -733,12 +838,19 @@ function TablaDocumentacion({ docData, isEditor, onSave }) {
     if (!file) return
     const { read, utils } = await import('xlsx')
     const buf  = await file.arrayBuffer()
-    const wb   = read(buf)
+    const wb   = read(buf, { cellDates: true })
     const ws   = wb.Sheets[wb.SheetNames[0]]
-    const data = utils.sheet_to_json(ws, { header: 1, defval: '' })
+    const data = utils.sheet_to_json(ws, { header: 1, defval: '', raw: true })
     if (!data.length) return
-    const h = (data[0] || []).map(String)
-    const r = data.slice(1).map(row => h.map((_, i) => String(row[i] ?? '')))
+    const h = (data[0] || []).map(v => String(v ?? '').trim())
+    const r = data.slice(1).map(row =>
+      h.map((_, i) => {
+        const v = row[i]
+        if (v instanceof Date) return formatDate(v)
+        if (isFechaCol(h[i])) return formatDate(v)
+        return String(v ?? '')
+      })
+    )
     setHeaders(h)
     setRows(r)
     setDirty(true)
@@ -755,28 +867,10 @@ function TablaDocumentacion({ docData, isEditor, onSave }) {
     setDirty(true)
   }
 
-  const addRow = () => {
-    setRows(prev => [...prev, headers.map(() => '')])
-    setDirty(true)
-  }
-
-  const deleteRow = (ri) => {
-    setRows(prev => prev.filter((_, i) => i !== ri))
-    setDirty(true)
-  }
-
-  const addCol = () => {
-    const label = `Columna ${headers.length + 1}`
-    setHeaders(prev => [...prev, label])
-    setRows(prev => prev.map(r => [...r, '']))
-    setDirty(true)
-  }
-
-  const deleteCol = (ci) => {
-    setHeaders(prev => prev.filter((_, i) => i !== ci))
-    setRows(prev => prev.map(r => r.filter((_, i) => i !== ci)))
-    setDirty(true)
-  }
+  const addRow  = () => { setRows(prev => [...prev, headers.map(() => '')]); setDirty(true) }
+  const deleteRow = (ri) => { setRows(prev => prev.filter((_, i) => i !== ri)); setDirty(true) }
+  const addCol  = () => { const label = `Columna ${headers.length + 1}`; setHeaders(prev => [...prev, label]); setRows(prev => prev.map(r => [...r, ''])); setDirty(true) }
+  const deleteCol = (ci) => { setHeaders(prev => prev.filter((_, i) => i !== ci)); setRows(prev => prev.map(r => r.filter((_, i) => i !== ci))); setDirty(true) }
 
   const isEmpty = !headers.length
 
@@ -810,19 +904,23 @@ function TablaDocumentacion({ docData, isEditor, onSave }) {
               <button onClick={() => save(headers, rows)}
                 disabled={saving}
                 style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: green, color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
-                {saving ? 'Guardando…' : '✓ Guardar'}
+                {saving ? 'Guardando…' : '✓ Guardar cambios'}
               </button>
             )}
           </>
+        )}
+        {!dirty && !isEmpty && (
+          <button onClick={() => setChangelog(buildChangelog([], [], headers, rows))}
+            style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Ver último informe
+          </button>
         )}
       </div>
 
       {/* Tabla */}
       {isEmpty ? (
         <div style={{ padding: '32px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
-          {isEditor
-            ? 'Importá un Excel para cargar la tabla de documentación.'
-            : 'Sin documentación cargada.'}
+          {isEditor ? 'Importá un Excel para cargar la tabla de documentación.' : 'Sin documentación cargada.'}
         </div>
       ) : (
         <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${border}` }}>
@@ -830,14 +928,11 @@ function TablaDocumentacion({ docData, isEditor, onSave }) {
             <thead>
               <tr style={{ background: '#F3F4F6' }}>
                 {headers.map((h, ci) => (
-                  <th key={ci} style={{ padding: '7px 10px', borderBottom: `1px solid ${border}`, borderRight: ci < headers.length - 1 ? `1px solid ${border}` : 'none', fontWeight: 700, color: dark, whiteSpace: 'nowrap', position: 'relative', minWidth: 100 }}>
+                  <th key={ci} style={{ padding: '7px 10px', borderBottom: `1px solid ${border}`, borderRight: ci < headers.length - 1 ? `1px solid ${border}` : 'none', fontWeight: 700, color: dark, whiteSpace: 'nowrap', position: 'relative', minWidth: isRevisionCol(h) ? 90 : 100 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                       {isEditor ? (
-                        <input
-                          value={h}
-                          onChange={e => updateHeader(ci, e.target.value)}
-                          style={{ flex: 1, border: 'none', background: 'transparent', fontWeight: 700, fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none', minWidth: 60 }}
-                        />
+                        <input value={h} onChange={e => updateHeader(ci, e.target.value)}
+                          style={{ flex: 1, border: 'none', background: 'transparent', fontWeight: 700, fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none', minWidth: 60 }} />
                       ) : (
                         <span style={{ flex: 1 }}>{h}</span>
                       )}
@@ -857,19 +952,37 @@ function TablaDocumentacion({ docData, isEditor, onSave }) {
                 <tr key={ri} style={{ borderBottom: ri < rows.length - 1 ? `1px solid ${border}` : 'none' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#FAFAF9'}
                   onMouseLeave={e => e.currentTarget.style.background = 'white'}>
-                  {row.map((cell, ci) => (
-                    <td key={ci} style={{ padding: '5px 8px', borderRight: ci < row.length - 1 ? `1px solid ${border}` : 'none', verticalAlign: 'top' }}>
-                      {isEditor ? (
-                        <input
-                          value={cell}
-                          onChange={e => updateCell(ri, ci, e.target.value)}
-                          style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none' }}
-                        />
-                      ) : (
-                        <span>{cell}</span>
-                      )}
-                    </td>
-                  ))}
+                  {row.map((cell, ci) => {
+                    const h = headers[ci] || ''
+                    const isRev = isRevisionCol(h)
+                    return (
+                      <td key={ci} style={{ padding: '4px 8px', borderRight: ci < row.length - 1 ? `1px solid ${border}` : 'none', verticalAlign: 'middle' }}>
+                        {isRev ? (
+                          isEditor ? (
+                            <select value={cell} onChange={e => updateCell(ri, ci, e.target.value)}
+                              style={{ border: 'none', borderRadius: 99, padding: '2px 8px', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
+                                background: cell ? (REVISION_COLORS[cell] + '1A') : '#F3F4F6',
+                                color: REVISION_COLORS[cell] || mid }}>
+                              {REVISION_OPTIONS.map(o => <option key={o} value={o}>{o || '—'}</option>)}
+                            </select>
+                          ) : (
+                            cell ? (
+                              <span style={{ display: 'inline-block', padding: '2px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, background: (REVISION_COLORS[cell] || mid) + '1A', color: REVISION_COLORS[cell] || mid }}>
+                                {cell}
+                              </span>
+                            ) : <span style={{ color: '#D1D5DB' }}>—</span>
+                          )
+                        ) : (
+                          isEditor ? (
+                            <input value={cell} onChange={e => updateCell(ri, ci, e.target.value)}
+                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none' }} />
+                          ) : (
+                            <span>{cell}</span>
+                          )
+                        )}
+                      </td>
+                    )
+                  })}
                   {isEditor && (
                     <td style={{ textAlign: 'center', padding: '4px' }}>
                       <button onClick={() => deleteRow(ri)}
@@ -882,6 +995,15 @@ function TablaDocumentacion({ docData, isEditor, onSave }) {
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Modal informe de cambios */}
+      {changelog !== null && (
+        <ModalChangelog
+          changes={changelog}
+          proyNombre={proyNombre}
+          onClose={() => setChangelog(null)}
+        />
       )}
     </div>
   )
@@ -1066,6 +1188,7 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
                 docData={p.documentacion}
                 isEditor={isEditor}
                 onSave={docData => onSaveDoc(p.id, docData)}
+                proyNombre={p.nombre}
               />
             )}
           </div>
