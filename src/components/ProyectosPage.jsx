@@ -717,6 +717,15 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
 const REVISION_OPTIONS = ['', 'R1', 'R2', 'R3', 'R4', 'R5']
 const REVISION_COLORS  = { R1: '#2563EB', R2: '#7C3AED', R3: '#D97706', R4: '#DC2626', R5: '#059669' }
 
+function isRubroHeader(headers, row) {
+  // Fila de título de rubro: ESCALA vacía y columna A es número entero o vacío con texto en B en mayúsculas
+  const escalaIdx = headers.findIndex(h => /escala/i.test(h))
+  const escalaVacia = escalaIdx < 0 || !String(row[escalaIdx] ?? '').trim()
+  const colA = String(row[0] ?? '').trim()
+  const esEntero = /^\d+$/.test(colA) || colA === ''
+  return escalaVacia && esEntero
+}
+
 function isRevisionCol(header) {
   // Solo "NR. REVISIÓN" o "REVISIÓN" puros — excluye "FECHA REVISIÓN", "CAMBIO CONTRA..."
   return /^(nr\.?\s*)?revisi[oó]n$/i.test(header.trim())
@@ -960,16 +969,21 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, ri) => (
-                <tr key={ri} style={{ borderBottom: ri < rows.length - 1 ? `1px solid ${border}` : 'none' }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#FAFAF9'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+              {rows.map((row, ri) => {
+                const isHeader = isRubroHeader(headers, row)
+                return (
+                <tr key={ri}
+                  style={{ borderBottom: `1px solid ${border}`, background: isHeader ? '#2D2D2D' : 'white' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = isHeader ? '#3A3A3A' : '#FAFAF9' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = isHeader ? '#2D2D2D' : 'white' }}>
                   {row.map((cell, ci) => {
                     const h = headers[ci] || ''
                     const isRev = isRevisionCol(h)
+                    const cellColor = isHeader ? 'white' : dark
+                    const cellFontWeight = isHeader ? 700 : 400
                     return (
-                      <td key={ci} style={{ padding: '4px 8px', borderRight: ci < row.length - 1 ? `1px solid ${border}` : 'none', verticalAlign: 'middle' }}>
-                        {isRev ? (
+                      <td key={ci} style={{ padding: isHeader ? '6px 8px' : '4px 8px', borderRight: ci < row.length - 1 ? `1px solid ${isHeader ? '#444' : border}` : 'none', verticalAlign: 'middle' }}>
+                        {isRev && !isHeader ? (
                           isEditor ? (
                             <select value={cell} onChange={e => updateCell(ri, ci, e.target.value)}
                               style={{ border: 'none', borderRadius: 99, padding: '2px 8px', fontSize: 11, fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', outline: 'none',
@@ -987,9 +1001,9 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
                         ) : (
                           isEditor ? (
                             <input value={cell} onChange={e => updateCell(ri, ci, e.target.value)}
-                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none' }} />
+                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 12, color: cellColor, fontWeight: cellFontWeight, fontFamily: 'inherit', outline: 'none' }} />
                           ) : (
-                            <span>{cell}</span>
+                            <span style={{ color: cellColor, fontWeight: cellFontWeight }}>{cell}</span>
                           )
                         )}
                       </td>
@@ -1003,7 +1017,7 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
                     </td>
                   )}
                 </tr>
-              ))}
+              )})}
             </tbody>
           </table>
         </div>
