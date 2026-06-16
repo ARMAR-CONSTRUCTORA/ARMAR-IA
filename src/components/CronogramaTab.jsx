@@ -347,8 +347,14 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     const fillColor   = isSubtarea ? hexToRgba(baseColor, 0.45) : etaColor
     const estado      = tarea.estado || estadoFromAvance(avance)
     const dur         = calcDuracionHabil(tarea.fechaInicio, tarea.fechaFin)
-    const adic        = calcTotalAdicionales(tarea)
-    const subtotal    = calcTotalEtapa(tarea)
+    const subs        = !isSubtarea ? tareas.filter(t => t.parentId === tarea.id) : []
+    const dispPresup  = !isSubtarea && subs.length > 0
+      ? subs.reduce((s, t) => s + (t.presupuesto || 0), 0)
+      : (tarea.presupuesto || 0)
+    const adic        = !isSubtarea && subs.length > 0
+      ? subs.reduce((s, t) => s + calcTotalAdicionales(t), 0)
+      : calcTotalAdicionales(tarea)
+    const subtotal    = dispPresup + adic
     const pagadoAcum  = calcPagadoAcumulado(tarea.id, certificados)
     const saldo       = subtotal - pagadoAcum
 
@@ -398,8 +404,8 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
         )}
         {!hiddenCols.has('presupuesto') && (
           <div style={{ ...cellStyle(COL_PRESUP), display: 'flex', alignItems: 'center', padding: '0 5px', background: isSubtarea ? 'white' : '#FAFAFA' }}>
-            <span style={{ fontSize: 10, color: tarea.presupuesto ? 'var(--gray-700)' : 'var(--gray-300)', fontWeight: tarea.presupuesto ? 600 : 400 }}>
-              {tarea.presupuesto ? fmtPesos(tarea.presupuesto) : '—'}
+            <span style={{ fontSize: 10, color: dispPresup ? 'var(--gray-700)' : 'var(--gray-300)', fontWeight: dispPresup ? 600 : 400 }}>
+              {dispPresup ? fmtPesos(dispPresup) : '—'}
             </span>
           </div>
         )}
@@ -618,8 +624,21 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
             if (!arrows.length) return null
             const hitosOffset = hitosValidos.length * HITO_ROW_H
             const svgH = hitosOffset + visibleRows.length * ROW_H
+            if (typeof window !== 'undefined') {
+              console.log('[ARROWS DEBUG]', { minDate: minDate.toISOString(), effectivePpd, timelineW, ROW_H, hitosOffset, visibleRows: visibleRows.map(t => t.nombre),
+                arrows: arrows.map(dep => {
+                  const pred = tareas.find(t => t.id === dep.dependeDeId)
+                  return {
+                    depNombre: dep.nombre, depFechaInicio: dep.fechaInicio, depRowIdx: rowIdx[dep.id],
+                    predNombre: pred?.nombre, predFechaFin: pred?.fechaFin, predRowIdx: pred ? rowIdx[pred.id] : undefined,
+                    x1: pred ? toPx(pred.fechaFin) + effectivePpd : null, x2: toPx(dep.fechaInicio),
+                    y1: pred ? hitosOffset + rowIdx[pred.id] * ROW_H + ROW_H / 2 : null, y2: hitosOffset + rowIdx[dep.id] * ROW_H + ROW_H / 2,
+                  }
+                })
+              })
+            }
             return (
-              <svg style={{ position: 'absolute', top: 0, left: TABLE_W, pointerEvents: 'none', overflow: 'visible', zIndex: 5 }} width={timelineW} height={svgH}>
+              <svg data-gantt-arrows style={{ position: 'absolute', top: 0, left: TABLE_W, pointerEvents: 'none', overflow: 'visible', zIndex: 5 }} width={timelineW} height={svgH}>
                 {arrows.map(dep => {
                   const pred = tareas.find(t => t.id === dep.dependeDeId)
                   if (!pred) return null
@@ -1604,7 +1623,6 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       setEditingTarea(null); return
     }
     if (updatedTarea.parentId === null) {
-      // Las etapas no participan del cascade: sus fechas se recalculan desde las subetapas
       onSaveCronograma(project.id, cronograma.id, { tareas: tareas.map(t => t.id === updatedTarea.id ? updatedTarea : t) })
       setEditingTarea(null); return
     }
@@ -1699,6 +1717,230 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     onSaveCronograma(project.id, cronograma.id, { informes: informesRestantes, tareas: tareasActualizadas })
   }
 
+  const exportarExcel = async () => {
+    setExportando(true)
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      wb.creator = 'ARMAR-IA'
+
+      const etapas = tareas.filter(t => t.parentId === null)
+
+      // ── Paleta de colores por etapa (ARGB sin #) ─────────────────────────
+      const PALETTE = ['E8641A','2563EB','2D7A4F','9333EA','DC2626','0891B2','D97706','BE185D','059669','7C3AED']
+      const etapaColor = {}
+      etapas.forEach((e, i) => { etapaColor[e.id] = PALETTE[i % PALETTE.length] })
+
+      // ── Rango de fechas del proyecto ──────────────────────────────────────
+      const allDates = tareas.filter(t => t.fechaInicio && t.fechaFin)
+      const minDate = new Date(Math.min(...allDates.map(t => new Date(t.fechaInicio + 'T00:00:00'))))
+      const maxDate = new Date(Math.max(...allDates.map(t => new Date(t.fechaFin + 'T00:00:00'))))
+
+      // ── Columnas de semanas ───────────────────────────────────────────────
+      const weeks = []
+      const cur = new Date(minDate)
+      cur.setDate(cur.getDate() - ((cur.getDay() + 6) % 7)) // alinear a lunes
+      while (cur <= maxDate) { weeks.push(new Date(cur)); cur.setDate(cur.getDate() + 7) }
+
+      const LEFT = 6  // columnas fijas antes del Gantt
+      const GANTT_COL = LEFT + 1
+
+      // ── Hoja Cronograma ───────────────────────────────────────────────────
+      const ws = wb.addWorksheet('Cronograma', {
+        views: [{ state: 'frozen', xSplit: LEFT, ySplit: 4 }],
+        pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 },
+      })
+
+      // Anchos
+      ws.getColumn(1).width = 5
+      ws.getColumn(2).width = 42
+      ws.getColumn(3).width = 11
+      ws.getColumn(4).width = 11
+      ws.getColumn(5).width = 5
+      ws.getColumn(6).width = 8
+      weeks.forEach((_, i) => { ws.getColumn(GANTT_COL + i).width = 3.5 })
+
+      const totalCols = LEFT + weeks.length
+
+      // Fila 1: título
+      ws.addRow([project.name || '—'])
+      ws.mergeCells(1, 1, 1, totalCols)
+      const titleCell = ws.getCell(1, 1)
+      titleCell.font = { bold: true, size: 15, color: { argb: 'FF1A1A1A' } }
+      titleCell.alignment = { vertical: 'middle' }
+      ws.getRow(1).height = 24
+
+      // Fila 2: info
+      ws.addRow([`Inicio: ${fmtLong(project.startDate)}   Fin estimado: ${fmtLong(project.endDate)}   Responsable: ${project.responsible || '—'}`])
+      ws.mergeCells(2, 1, 2, totalCols)
+      ws.getCell(2, 1).font = { size: 9, color: { argb: 'FF666666' } }
+      ws.getRow(2).height = 14
+
+      // Fila 3: cabecera de meses (fusionar semanas del mismo mes)
+      ws.addRow([])
+      ws.getRow(3).height = 14
+      let monthStart = null, lastMonth = null
+      weeks.forEach((w, i) => {
+        const month = w.getMonth()
+        const col = GANTT_COL + i
+        if (month !== lastMonth) {
+          if (monthStart !== null && lastMonth !== null) {
+            if (col - 1 > monthStart) ws.mergeCells(3, monthStart, 3, col - 1)
+          }
+          monthStart = col
+          lastMonth = month
+          const cell = ws.getCell(3, col)
+          cell.value = w.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
+          cell.font = { bold: true, size: 8, color: { argb: 'FFFFFFFF' } }
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF444444' } }
+          cell.alignment = { horizontal: 'center', vertical: 'middle' }
+        }
+      })
+      // Fusionar último mes
+      if (monthStart !== null) {
+        const lastCol = GANTT_COL + weeks.length - 1
+        if (lastCol > monthStart) ws.mergeCells(3, monthStart, 3, lastCol)
+      }
+
+      // Fila 4: encabezados de columnas fijas + semanas
+      const hdrRow = ws.addRow([
+        '#', 'Etapa / Subetapa', 'Inicio', 'Fin', 'Días', 'Av%',
+        ...weeks.map(w => `${w.getDate()}/${w.getMonth() + 1}`),
+      ])
+      hdrRow.height = 28
+      hdrRow.eachCell({ includeEmpty: true }, (cell, col) => {
+        cell.font = { bold: true, size: 9, color: { argb: 'FFFFFFFF' } }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A1A1A' } }
+        cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, textRotation: col >= GANTT_COL ? 90 : 0 }
+        cell.border = { right: { style: 'hair', color: { argb: 'FF555555' } } }
+      })
+
+      // ── Helper: agrega una fila de tarea ─────────────────────────────────
+      const taskRow = (tarea, isEtapa, label, colorHex) => {
+        const avance = isEtapa ? calcAvanceEtapa(tareas, tarea.id) : (tarea.avanceActual || 0)
+        const taskStart = tarea.fechaInicio ? new Date(tarea.fechaInicio + 'T00:00:00') : null
+        const taskEnd   = tarea.fechaFin   ? new Date(tarea.fechaFin   + 'T00:00:00') : null
+
+        const row = ws.addRow([
+          label,
+          tarea.nombre,
+          tarea.fechaInicio || '',
+          tarea.fechaFin || '',
+          diffCalDias(tarea.fechaInicio, tarea.fechaFin),
+          `${avance}%`,
+          ...weeks.map(() => ''),
+        ])
+        row.height = isEtapa ? 18 : 15
+
+        // Estilos columnas fijas
+        const bgFixed = isEtapa ? `22${colorHex}` : 'FFFFFFFF'
+        const altBg   = isEtapa ? `22${colorHex}` : 'FFF9F9F9'
+        for (let c = 1; c <= LEFT; c++) {
+          const cell = row.getCell(c)
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c % 2 === 0 ? altBg : bgFixed } }
+          cell.font = { bold: isEtapa, size: isEtapa ? 10 : 9, color: { argb: 'FF1A1A1A' } }
+          cell.alignment = { vertical: 'middle', indent: c === 2 && !isEtapa ? 2 : 0 }
+          cell.border = {
+            bottom: { style: 'hair', color: { argb: 'FFE0DDD8' } },
+            right: { style: 'hair', color: { argb: 'FFE0DDD8' } },
+          }
+        }
+
+        // Barras Gantt
+        weeks.forEach((weekStart, i) => {
+          const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 6)
+          const inRange = taskStart && taskEnd && taskStart <= weekEnd && taskEnd >= weekStart
+          // Calcular solapamiento parcial para avance
+          let avanceFill = false
+          if (inRange && avance > 0) {
+            const totalDays = Math.max(1, diffCalDias(tarea.fechaInicio, tarea.fechaFin))
+            const avanceDays = totalDays * avance / 100
+            const avanceEnd = new Date(taskStart); avanceEnd.setDate(avanceEnd.getDate() + avanceDays)
+            avanceFill = avanceEnd >= weekStart
+          }
+          const cell = row.getCell(GANTT_COL + i)
+          if (inRange) {
+            // Barra principal: color sólido etapa, más claro para subetapa
+            const barColor = isEtapa ? `FF${colorHex}` : `88${colorHex}`
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: avanceFill ? `FF${colorHex}` : barColor } }
+          } else {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: i % 2 === 0 ? 'FFFAFAF9' : 'FFFFFFFF' } }
+          }
+          cell.border = {
+            right:  { style: 'hair', color: { argb: 'FFE8E8E8' } },
+            bottom: { style: 'hair', color: { argb: 'FFE8E8E8' } },
+          }
+        })
+      }
+
+      let ei = 0
+      etapas.forEach(etapa => {
+        ei++
+        const color = etapaColor[etapa.id]
+        taskRow(etapa, true, `${ei}.`, color)
+        tareas.filter(t => t.parentId === etapa.id).forEach((sub, j) => {
+          taskRow(sub, false, `${ei}.${j + 1}`, color)
+        })
+      })
+
+      // Fila totales
+      const totalPres = etapas.reduce((s, t) => s + (t.presupuesto || 0), 0)
+      const totalAdic = etapas.reduce((s, t) => s + calcTotalAdicionales(t), 0)
+
+      // ── Hoja Resumen financiero ───────────────────────────────────────────
+      const ws2 = wb.addWorksheet('Resumen financiero')
+      ws2.getColumn(1).width = 40
+      ws2.getColumn(2).width = 16; ws2.getColumn(3).width = 16; ws2.getColumn(4).width = 16; ws2.getColumn(5).width = 10
+
+      const hdr2 = ws2.addRow(['Etapa', 'Presupuesto $', 'Adicionales $', 'Subtotal $', 'Avance %'])
+      hdr2.eachCell(cell => {
+        cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A1A1A' } }
+        cell.alignment = { horizontal: 'center', vertical: 'middle' }
+      })
+      hdr2.height = 18
+
+      etapas.forEach((etapa, i) => {
+        const adic = calcTotalAdicionales(etapa)
+        const av   = calcAvanceEtapa(tareas, etapa.id)
+        const color = etapaColor[etapa.id]
+        const row = ws2.addRow([
+          `${i + 1}. ${etapa.nombre}`,
+          etapa.presupuesto || 0,
+          adic,
+          (etapa.presupuesto || 0) + adic,
+          `${av}%`,
+        ])
+        row.height = 16
+        row.eachCell((cell, c) => {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `22${color}` } }
+          cell.font = { size: 10, bold: c === 1 }
+          cell.alignment = { horizontal: c === 1 ? 'left' : 'right', vertical: 'middle' }
+          cell.border = { bottom: { style: 'hair', color: { argb: 'FFE0DDD8' } } }
+          if (c >= 2 && c <= 4) cell.numFmt = '#,##0'
+        })
+      })
+
+      const totRow = ws2.addRow(['TOTAL', totalPres, totalAdic, totalPres + totalAdic, `${avanceGeneral}%`])
+      totRow.height = 18
+      totRow.eachCell((cell, c) => {
+        cell.font = { bold: true, size: 10 }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8E8E8' } }
+        cell.alignment = { horizontal: c === 1 ? 'left' : 'right', vertical: 'middle' }
+        if (c >= 2 && c <= 4) cell.numFmt = '#,##0'
+      })
+
+      // ── Descargar ─────────────────────────────────────────────────────────
+      const buffer = await wb.xlsx.writeBuffer()
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a'); a.href = url
+      a.download = `Cronograma_${(project.name || 'obra').replace(/[^\w\s]/g, '').trim()}.xlsx`
+      a.click(); URL.revokeObjectURL(url)
+    } catch (err) { console.error('Error exportando Excel:', err) }
+    finally { setExportando(false) }
+  }
+
   const exportarPDF = async () => {
     setExportando(true)
     try {
@@ -1725,11 +1967,82 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
         const hiddenEls = Array.from(contentEl.querySelectorAll('*')).filter(el => el.style.overflow === 'hidden' || el.style.overflowX === 'hidden' || el.style.overflowY === 'hidden')
         const saved = hiddenEls.map(el => ({ el, overflow: el.style.overflow, overflowX: el.style.overflowX, overflowY: el.style.overflowY }))
         hiddenEls.forEach(el => { if (el.style.overflow === 'hidden') el.style.overflow = 'visible'; if (el.style.overflowX === 'hidden') el.style.overflowX = 'visible'; if (el.style.overflowY === 'hidden') el.style.overflowY = 'visible' })
+
+        // html2canvas no rasteriza bien el SVG de flechas de dependencia (overflow:visible + scale>1
+        // hace que el contenido quede mal posicionado/escalado en el PDF). Se oculta antes de la
+        // captura y se redibuja como imagen sobre el canvas resultante, en la misma posición y
+        // escala que ocupaba en el DOM, así el resultado coincide con lo que se ve en pantalla.
+        const arrowsSvg = contentEl.querySelector('[data-gantt-arrows]')
+        let arrowOffsetX = 0, arrowOffsetY = 0, arrowW = 0, arrowH = 0, contentW = 0, contentH = 0, arrowImg = null
+        if (arrowsSvg) {
+          const contentRect = contentEl.getBoundingClientRect()
+          const svgRect = arrowsSvg.getBoundingClientRect()
+          arrowOffsetX = svgRect.left - contentRect.left
+          arrowOffsetY = svgRect.top - contentRect.top
+          arrowW = svgRect.width
+          arrowH = svgRect.height
+          contentW = contentRect.width
+          contentH = contentRect.height
+          const svgClone = arrowsSvg.cloneNode(true)
+          svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+          const svgData = new XMLSerializer().serializeToString(svgClone)
+          const svgUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`
+          arrowImg = await new Promise(resolve => {
+            const img = new Image()
+            img.onload = () => resolve(img)
+            img.onerror = () => resolve(null)
+            img.src = svgUrl
+          })
+          arrowsSvg.style.display = 'none'
+        }
+
         const canvas = await html2canvas(contentEl, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, width: fullWidth, windowWidth: fullWidth })
         scrollContainer.style.overflowX = prevOverflow
         saved.forEach(({ el, overflow, overflowX, overflowY }) => { el.style.overflow = overflow; el.style.overflowX = overflowX; el.style.overflowY = overflowY })
-        const imgW = pageW - mg * 2, imgH = Math.min(pageH - y - mg, (canvas.height * imgW) / canvas.width)
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.85), 'JPEG', mg, y, imgW, imgH)
+
+        if (arrowsSvg) {
+          arrowsSvg.style.display = ''
+        }
+
+        // Componer flechas sobre un canvas nuevo para evitar estado residual de html2canvas
+        let finalCanvas = canvas
+        if (arrowImg) {
+          const scaleX = canvas.width / contentW, scaleY = canvas.height / contentH
+          const out = document.createElement('canvas')
+          out.width = canvas.width
+          out.height = canvas.height
+          const ctx = out.getContext('2d')
+          ctx.drawImage(canvas, 0, 0)
+          ctx.drawImage(arrowImg, arrowOffsetX * scaleX, arrowOffsetY * scaleY, arrowW * scaleX, arrowH * scaleY)
+          finalCanvas = out
+        }
+
+        // Paginar verticalmente: escalar al ancho de la página y cortar en filas de páginas
+        const imgW = pageW - mg * 2
+        const mmPerPx = imgW / finalCanvas.width
+        const firstPageAvail = pageH - y - mg   // mm disponibles en página 1 (debajo del header)
+        const otherPageAvail = pageH - 2 * mg   // mm disponibles en páginas siguientes
+        const firstSliceH = Math.round(firstPageAvail / mmPerPx)  // px a tomar en pág 1
+        const otherSliceH = Math.round(otherPageAvail / mmPerPx)  // px a tomar en págs siguientes
+
+        const sliceCanvas = document.createElement('canvas')
+        sliceCanvas.width = finalCanvas.width
+        const sliceCtx = sliceCanvas.getContext('2d')
+
+        let srcY = 0, firstPage = true
+        while (srcY < finalCanvas.height) {
+          const slicePx = firstPage ? firstSliceH : otherSliceH
+          const actualPx = Math.min(slicePx, finalCanvas.height - srcY)
+          sliceCanvas.height = actualPx
+          sliceCtx.clearRect(0, 0, sliceCanvas.width, actualPx)
+          sliceCtx.drawImage(finalCanvas, 0, srcY, finalCanvas.width, actualPx, 0, 0, finalCanvas.width, actualPx)
+          const sliceMmH = actualPx * mmPerPx
+          const sliceY = firstPage ? y : mg
+          if (!firstPage) pdf.addPage()
+          pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.85), 'JPEG', mg, sliceY, imgW, sliceMmH)
+          srcY += actualPx
+          firstPage = false
+        }
       }
       pdf.save(`Cronograma_${(project.name || 'obra').replace(/[^\w\s]/g, '').trim()}.pdf`)
     } catch (err) { console.error('Error exportando PDF:', err) }
@@ -1800,6 +2113,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
             <button onClick={() => setShowAvanceModal(true)} style={btnStyle(true)}>+ Cargar avance</button>
             <button onClick={() => setShowCertModal(true)} style={btnStyle(false, false, true)}>💳 Certificado de pago</button>
             <button onClick={() => setShowExportModal(true)} disabled={exportando} style={{ ...btnStyle(), opacity: exportando ? 0.6 : 1 }}>{exportando ? 'Exportando…' : '⬇ Exportar PDF'}</button>
+            <button onClick={exportarExcel} disabled={exportando} style={{ ...btnStyle(), opacity: exportando ? 0.6 : 1 }}>📊 Exportar Excel</button>
             <button onClick={() => setShowDeleteModal(true)} style={btnStyle(false, true)}>🗑 Eliminar cronograma</button>
           </>
         ))}

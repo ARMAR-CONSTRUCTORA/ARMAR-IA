@@ -6,7 +6,12 @@ function fmtLong(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
 }
 
-const ETAPA_COLORS = ['#F97316', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899', '#EAB308', '#06B6D4', '#6B7280']
+const ETAPA_COLORS = [
+  '#F97316','#E8641A','#EAB308','#84CC16','#10B981',
+  '#06B6D4','#3B82F6','#6366F1','#8B5CF6','#A855F7',
+  '#EC4899','#F43F5E','#DC2626','#92400E','#78716C',
+  '#6B7280','#0F766E','#0369A1','#1D4ED8','#15803D',
+]
 
 const inputStyle = {
   width: '100%', padding: '9px 12px', borderRadius: 8,
@@ -76,6 +81,7 @@ function ModalConfirmarEliminar({ nombre, isSubtarea, onConfirm, onClose }) {
   )
 }
 
+
 export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgregarSubetapa, onDelete }) {
   const isNueva    = !tarea?.id
   const isSubtarea = tarea?.parentId !== null && tarea?.parentId !== undefined
@@ -83,15 +89,15 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
   const [showConfirmDelete, setShowConfirmDelete] = useState(false)
 
   const [form, setForm] = useState({
-    nombre:         tarea?.nombre      || '',
-    fechaInicio:    tarea?.fechaInicio || '',
-    duracionDias:   String(tarea?.duracionDias ?? 5),
-    pesoRelativo:   String(tarea?.pesoRelativo ?? 10),
-    dependeDeId:    tarea?.dependeDeId  ?? null,
-    tipoVinculo:    tarea?.tipoVinculo  || 'Fin a inicio',
-    desfaseDias:    String(tarea?.desfaseDias ?? 0),
+    nombre:       tarea?.nombre      || '',
+    fechaInicio:  tarea?.fechaInicio || '',
+    duracionDias: String(tarea?.duracionDias ?? 5),
+    pesoRelativo: String(tarea?.pesoRelativo ?? 10),
+    dependeDeId:  tarea?.dependeDeId  ?? null,
+    tipoVinculo:  tarea?.tipoVinculo  || 'Fin a inicio',
+    desfaseDias:  String(tarea?.desfaseDias ?? 0),
     presupuestoRaw: tarea?.presupuesto != null ? Number(tarea.presupuesto).toLocaleString('es-AR') : '',
-    color:          tarea?.color || ETAPA_COLORS[0],
+    color:        tarea?.color || ETAPA_COLORS[0],
   })
 
   const [adicionales, setAdicionales] = useState(
@@ -115,40 +121,27 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
     ? form.nombre.trim() && form.fechaInicio && Number(form.duracionDias) > 0
     : form.nombre.trim()
 
-  const handleSave = () => {
-    if (!canSave) return
-    if (!isSubtarea) {
-      // Las etapas no tienen fechas/duración/dependencia editables: se calculan desde las subetapas
-      onSave({
+  const buildSavePayload = () => isSubtarea
+    ? {
+        ...tarea, ...form, fechaFin,
+        tipoVinculo:  'Fin a inicio',
+        duracionDias: Number(form.duracionDias),
+        pesoRelativo: Number(form.pesoRelativo),
+        desfaseDias:  Number(form.desfaseDias),
+        dependeDeId:  form.dependeDeId ? Number(form.dependeDeId) : null,
+        presupuesto:  parseMiles(form.presupuestoRaw),
+        adicionales:  adicionales.map(a => ({ id: a.id, motivo: a.motivo || '', monto: parseMiles(a.montoRaw) })),
+      }
+    : {
         ...tarea,
         nombre:       form.nombre,
         color:        form.color,
         pesoRelativo: Number(form.pesoRelativo),
-        presupuesto:  parseMiles(form.presupuestoRaw),
-        adicionales:  adicionales.map(a => ({
-          id:     a.id,
-          motivo: a.motivo || '',
-          monto:  parseMiles(a.montoRaw),
-        })),
-      })
-      return
-    }
-    onSave({
-      ...tarea,
-      ...form,
-      fechaFin,
-      tipoVinculo:  'Fin a inicio',
-      duracionDias: Number(form.duracionDias),
-      pesoRelativo: Number(form.pesoRelativo),
-      desfaseDias:  Number(form.desfaseDias),
-      dependeDeId:  form.dependeDeId ? Number(form.dependeDeId) : null,
-      presupuesto:  parseMiles(form.presupuestoRaw),
-      adicionales:  adicionales.map(a => ({
-        id:     a.id,
-        motivo: a.motivo || '',
-        monto:  parseMiles(a.montoRaw),
-      })),
-    })
+      }
+
+  const handleSave = () => {
+    if (!canSave) return
+    onSave(buildSavePayload())
   }
 
   const handleConfirmDelete = () => {
@@ -217,6 +210,65 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
                     {fechaFin ? fmtLong(fechaFin) : '—'}
                   </div>
                 </Field>
+
+                <Field label="Presupuesto base">
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+                    <input
+                      type="text" inputMode="numeric"
+                      style={{ ...inputStyle, paddingLeft: 26 }}
+                      placeholder="0"
+                      value={form.presupuestoRaw}
+                      onChange={e => {
+                        const raw = e.target.value.replace(/\D/g, '')
+                        setForm(f => ({ ...f, presupuestoRaw: raw ? Number(raw).toLocaleString('es-AR') : '' }))
+                      }}
+                    />
+                  </div>
+                </Field>
+
+                <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14, marginBottom: 14 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+                    Adicionales
+                  </div>
+                  {adicionales.map(a => (
+                    <div key={a.id} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                      <input
+                        type="text"
+                        placeholder="Motivo"
+                        style={{ ...inputStyle, flex: 1 }}
+                        value={a.motivo}
+                        onChange={e => updateAdicional(a.id, 'motivo', e.target.value)}
+                      />
+                      <div style={{ position: 'relative', width: 120 }}>
+                        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
+                        <input
+                          type="text" inputMode="numeric"
+                          style={{ ...inputStyle, paddingLeft: 22, width: '100%' }}
+                          placeholder="0"
+                          value={a.montoRaw}
+                          onChange={e => {
+                            const raw = e.target.value.replace(/\D/g, '')
+                            updateAdicional(a.id, 'montoRaw', raw ? Number(raw).toLocaleString('es-AR') : '')
+                          }}
+                        />
+                      </div>
+                      <button onClick={() => removeAdicional(a.id)}
+                        style={{ background: 'none', border: 'none', color: '#DC2626', cursor: 'pointer', fontSize: 18, padding: '0 4px', lineHeight: 1 }}>×</button>
+                    </div>
+                  ))}
+                  <button onClick={addAdicional}
+                    style={{ fontSize: 12, color: 'var(--orange)', background: 'none', border: '1px dashed var(--orange)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}>
+                    + Agregar adicional
+                  </button>
+                  {adicionales.length > 0 && (
+                    <div style={{ marginTop: 10, fontSize: 12, color: 'var(--gray-600)', background: '#F9FAFB', border: '1px solid var(--gray-200)', borderRadius: 7, padding: '8px 12px' }}>
+                      <div>Base: <strong>${presupuestoBase.toLocaleString('es-AR')}</strong></div>
+                      <div>Adicionales: <strong>${totalAdicionales.toLocaleString('es-AR')}</strong></div>
+                      <div style={{ marginTop: 4, fontWeight: 700, color: 'var(--gray-800)' }}>Total: ${totalGeneral.toLocaleString('es-AR')}</div>
+                    </div>
+                  )}
+                </div>
               </>
             ) : (
               <>
@@ -261,100 +313,11 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
                 onChange={e => setForm(f => ({ ...f, pesoRelativo: e.target.value }))} />
             </Field>
 
-            <Field label="Presupuesto base" hint="Monto original de contrato para esta etapa">
-              <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
-                <input
-                  type="text" inputMode="numeric"
-                  style={{ ...inputStyle, paddingLeft: 26 }}
-                  placeholder="0"
-                  value={form.presupuestoRaw}
-                  onChange={e => {
-                    const raw = e.target.value.replace(/\D/g, '')
-                    setForm(f => ({ ...f, presupuestoRaw: raw ? Number(raw).toLocaleString('es-AR') : '' }))
-                  }}
-                />
+            {!isSubtarea && (
+              <div style={{ background: '#F9FAFB', border: '1px solid var(--gray-200)', borderRadius: 8, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--gray-500)' }}>
+                Presupuesto y adicionales se cargan en las subetapas. La etapa muestra la suma automáticamente.
               </div>
-            </Field>
-
-            <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14, marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                  Adicionales {adicionales.length > 0 && `(${adicionales.length})`}
-                </span>
-                <button
-                  onClick={addAdicional}
-                  style={{ padding: '5px 12px', borderRadius: 6, border: '1px dashed var(--orange)', background: 'white', color: 'var(--orange)', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
-                >
-                  + Agregar adicional
-                </button>
-              </div>
-
-              {adicionales.length === 0 && (
-                <div style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center', padding: '10px 0' }}>
-                  Sin adicionales cargados
-                </div>
-              )}
-
-              {adicionales.map((a, idx) => (
-                <div key={a.id} style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--orange)' }}>Adicional #{idx + 1}</span>
-                    <button onClick={() => removeAdicional(a.id)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#EF4444', fontSize: 16, lineHeight: 1, padding: '2px 4px' }}>×</button>
-                  </div>
-                  <div style={{ marginBottom: 8 }}>
-                    <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 4 }}>Motivo</label>
-                    <input
-                      type="text"
-                      style={{ ...inputStyle, fontSize: 12 }}
-                      placeholder="Ej: Cambio de especificación, trabajo extra…"
-                      value={a.motivo}
-                      onChange={e => updateAdicional(a.id, 'motivo', e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: 'block', fontSize: 10, fontWeight: 700, color: 'var(--gray-500)', textTransform: 'uppercase', marginBottom: 4 }}>Monto</label>
-                    <div style={{ position: 'relative' }}>
-                      <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--gray-500)', fontWeight: 600, pointerEvents: 'none' }}>$</span>
-                      <input
-                        type="text" inputMode="numeric"
-                        style={{ ...inputStyle, paddingLeft: 26, fontSize: 12 }}
-                        placeholder="0"
-                        value={a.montoRaw}
-                        onChange={e => {
-                          const raw = e.target.value.replace(/\D/g, '')
-                          updateAdicional(a.id, 'montoRaw', raw ? Number(raw).toLocaleString('es-AR') : '')
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {(presupuestoBase > 0 || totalAdicionales > 0) && (
-                <div style={{ background: '#F9FAFB', border: '1px solid var(--gray-200)', borderRadius: 8, padding: '10px 14px', marginTop: 4 }}>
-                  {presupuestoBase > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--gray-600)', marginBottom: 4 }}>
-                      <span>Presupuesto base</span>
-                      <span>${presupuestoBase.toLocaleString('es-AR')}</span>
-                    </div>
-                  )}
-                  {totalAdicionales > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--orange)', marginBottom: 4 }}>
-                      <span>Adicionales</span>
-                      <span>+${totalAdicionales.toLocaleString('es-AR')}</span>
-                    </div>
-                  )}
-                  {presupuestoBase > 0 && totalAdicionales > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 800, color: 'var(--gray-800)', borderTop: '1px solid var(--gray-200)', paddingTop: 6, marginTop: 2 }}>
-                      <span>Total</span>
-                      <span>${totalGeneral.toLocaleString('es-AR')}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            )}
 
             {isSubtarea && (
               <div style={{ borderTop: '1px solid var(--gray-200)', paddingTop: 14 }}>
@@ -437,6 +400,7 @@ export default function ModalEditarEtapa({ tarea, tareas, onSave, onClose, onAgr
           onConfirm={handleConfirmDelete}
         />
       )}
+
     </>
   )
 }
