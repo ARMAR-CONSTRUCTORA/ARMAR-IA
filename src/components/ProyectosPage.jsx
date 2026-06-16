@@ -715,8 +715,8 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
 
 // ─── Tabla de documentación ───────────────────────────────────────────────────
 
-const REVISION_OPTIONS = ['', 'R1', 'R2', 'R3', 'R4', 'R5']
-const REVISION_COLORS  = { R1: '#2563EB', R2: '#7C3AED', R3: '#D97706', R4: '#DC2626', R5: '#059669' }
+const REVISION_OPTIONS = ['', 'R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'R9', 'R10']
+const REVISION_COLORS  = { R1: '#2563EB', R2: '#7C3AED', R3: '#D97706', R4: '#DC2626', R5: '#059669', R6: '#0891B2', R7: '#9333EA', R8: '#B45309', R9: '#BE123C', R10: '#1E40AF' }
 
 function isRubroHeader(headers, row) {
   // Fila de título de rubro: ESCALA vacía y columna A es número entero o vacío con texto en B en mayúsculas
