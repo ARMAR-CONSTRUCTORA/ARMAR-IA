@@ -1078,15 +1078,222 @@ function calcTot(row) {
   return '$' + Math.round(p * c).toLocaleString('es-AR')
 }
 
+const PDF_COLS = [
+  { key: 'item',          label: 'Item',      w: 12, align: 'left' },
+  { key: 'foto',          label: 'Foto',      w: 24, align: 'center', type: 'imagen' },
+  { key: 'ubicacion',     label: 'Ubicación', w: 36, align: 'left' },
+  { key: 'categoria',     label: 'Categoría', w: 28, align: 'left' },
+  { key: 'marca',         label: 'Marca',     w: 20, align: 'left' },
+  { key: 'modelo',        label: 'Modelo',    w: 52, align: 'left' },
+  { key: 'unidad',        label: 'Un.',       w: 10, align: 'center' },
+  { key: 'cant',          label: 'Cant.',     w: 13, align: 'right' },
+  { key: 'cajasUn',       label: 'Cajas/Un.', w: 16, align: 'right' },
+  { key: 'definido',      label: 'Definido',  w: 15, align: 'center', type: 'check' },
+  { key: 'comprado',      label: 'Comprado',  w: 17, align: 'center', type: 'check' },
+  { key: 'link',          label: 'Link',      w: 12, align: 'center', type: 'link' },
+  { key: 'precioUn',      label: '$un.',      w: 22, align: 'right' },
+  { key: 'precioTot',     label: '$tot',      w: 22, align: 'right', type: 'calc' },
+  { key: 'observaciones', label: 'Obs.',      w: 29, align: 'left' },
+]
+
+async function fetchImageBase64(url) {
+  try {
+    const resp = await fetch(url)
+    const blob = await resp.blob()
+    return await new Promise(res => {
+      const r = new FileReader()
+      r.onload = () => res(r.result)
+      r.readAsDataURL(blob)
+    })
+  } catch { return null }
+}
+
 function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
-  const [rows,      setRows]      = useState(comprasData?.rows || [])
-  const [saving,    setSaving]    = useState(false)
-  const [dirty,     setDirty]     = useState(false)
-  const [uploading, setUploading] = useState({})
-  const [editMode,  setEditMode]  = useState(false)
-  const [fotoModal, setFotoModal] = useState(null) // { url, modelo, marca, ubicacion }
+  const [rows,        setRows]        = useState(comprasData?.rows || [])
+  const [saving,      setSaving]      = useState(false)
+  const [dirty,       setDirty]       = useState(false)
+  const [uploading,   setUploading]   = useState({})
+  const [editMode,    setEditMode]    = useState(false)
+  const [fotoModal,   setFotoModal]   = useState(null)
+  const [exportando,  setExportando]  = useState(false)
   const fileRefs = useRef({})
   const editing = isEditor && editMode
+
+  const exportarPDF = async () => {
+    setExportando(true)
+    try {
+      const { jsPDF } = await import('jspdf')
+
+      // Pre-fetch imágenes
+      const imgCache = {}
+      for (const row of rows) {
+        if (row.foto && !imgCache[row.foto]) {
+          const b64 = await fetchImageBase64(row.foto)
+          if (b64) imgCache[row.foto] = b64
+        }
+      }
+
+      // A3 landscape: 420 × 297 mm
+      const doc  = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' })
+      const PW   = 420, PH = 297, MG = 10
+      const usableW = PW - MG * 2
+      const totalColW = PDF_COLS.reduce((s, c) => s + c.w, 0)
+      const scale = usableW / totalColW
+
+      const colW = PDF_COLS.map(c => c.w * scale)
+      const ROW_H   = 17   // datos
+      const HDR_H   = 7    // encabezado de sección
+      const THDR_H  = 6    // header de tabla
+      const PAGE_H  = PH - MG * 2
+
+      const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' })
+
+      let pageNum = 1
+      const drawPageHeader = () => {
+        // Fondo oscuro header
+        doc.setFillColor(26, 26, 46)
+        doc.rect(MG, MG, usableW, 12, 'F')
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(255,255,255)
+        doc.text('LISTADO DE COMPRAS CLIENTES', PW / 2, MG + 7.5, { align: 'center' })
+        doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+        doc.text(proyNombre || '', MG + 3, MG + 4.5)
+        doc.text(fecha, PW - MG - 3, MG + 4.5, { align: 'right' })
+        doc.text(`Página ${pageNum}`, PW - MG - 3, MG + 10, { align: 'right' })
+        doc.setTextColor(0,0,0)
+        pageNum++
+      }
+
+      const drawTableHeader = (y) => {
+        doc.setFillColor(243, 244, 246)
+        doc.rect(MG, y, usableW, THDR_H, 'F')
+        doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2)
+        doc.line(MG, y + THDR_H, MG + usableW, y + THDR_H)
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(30,30,30)
+        let x = MG
+        PDF_COLS.forEach((col, ci) => {
+          const w = colW[ci]
+          if (col.align === 'right') doc.text(col.label, x + w - 1.5, y + THDR_H - 1.8, { align: 'right' })
+          else if (col.align === 'center') doc.text(col.label, x + w / 2, y + THDR_H - 1.8, { align: 'center' })
+          else doc.text(col.label, x + 1.5, y + THDR_H - 1.8)
+          x += w
+        })
+      }
+
+      drawPageHeader()
+      let y = MG + 13
+      drawTableHeader(y)
+      y += THDR_H
+
+      for (let ri = 0; ri < rows.length; ri++) {
+        const row = rows[ri]
+        const isHdr = isComprasHeader(row)
+        const rowH  = isHdr ? HDR_H : ROW_H
+
+        // Nueva página si no cabe
+        if (y + rowH > MG + PAGE_H) {
+          doc.addPage([420, 297], 'landscape')
+          drawPageHeader()
+          y = MG + 13
+          drawTableHeader(y)
+          y += THDR_H
+        }
+
+        // Fondo fila
+        if (isHdr) {
+          doc.setFillColor(45, 45, 78)
+          doc.rect(MG, y, usableW, rowH, 'F')
+        } else if (row.comprado) {
+          doc.setFillColor(240, 253, 244)
+          doc.rect(MG, y, usableW, rowH, 'F')
+        } else if (ri % 2 === 0) {
+          doc.setFillColor(250, 250, 249)
+          doc.rect(MG, y, usableW, rowH, 'F')
+        }
+
+        // Línea separadora
+        doc.setDrawColor(220, 220, 220); doc.setLineWidth(0.15)
+        doc.line(MG, y + rowH, MG + usableW, y + rowH)
+
+        // Celdas
+        let x = MG
+        PDF_COLS.forEach((col, ci) => {
+          const w = colW[ci]
+          const raw = row[col.key] ?? ''
+
+          if (isHdr) {
+            if (col.key === 'item' || col.key === 'categoria') {
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255)
+              const txt = col.key === 'item' ? String(raw) : String(raw)
+              if (col.align === 'left') doc.text(txt, x + 1.5, y + rowH / 2 + 2.2)
+              x += w; return
+            }
+            x += w; return
+          }
+
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(30,30,30)
+
+          if (col.type === 'imagen') {
+            const b64 = imgCache[raw]
+            if (b64) {
+              const imgW = w - 2, imgH = rowH - 2
+              try { doc.addImage(b64, x + 1, y + 1, imgW, imgH, undefined, 'FAST') } catch {}
+            }
+            x += w; return
+          }
+
+          if (col.type === 'check') {
+            const tick = raw ? '✓' : '—'
+            doc.setTextColor(raw ? 45 : 180, raw ? 122 : 180, raw ? 79 : 180)
+            doc.setFont('helvetica', raw ? 'bold' : 'normal')
+            doc.text(tick, x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+            doc.setTextColor(30,30,30)
+            x += w; return
+          }
+
+          if (col.type === 'link') {
+            if (raw) {
+              doc.setTextColor(37, 99, 235); doc.setFont('helvetica', 'bold')
+              doc.text('LINK', x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+              doc.setTextColor(30,30,30)
+            }
+            x += w; return
+          }
+
+          if (col.type === 'calc') {
+            const tot = calcTot(row)
+            if (tot) {
+              doc.setFont('helvetica', 'bold')
+              doc.text(tot, x + w - 1.5, y + rowH / 2 + 2, { align: 'right' })
+            }
+            x += w; return
+          }
+
+          // Texto normal
+          const txt = String(raw)
+          if (!txt) { x += w; return }
+          const maxW = w - 3
+          const lines = doc.splitTextToSize(txt, maxW)
+          const show  = lines.slice(0, 2)
+          const lineH = 6.5 * 0.352 + 0.7
+          const blockH = show.length * lineH
+          const ty = y + (rowH - blockH) / 2 + lineH * 0.75
+          if (col.align === 'right') {
+            show.forEach((l, i) => doc.text(l, x + w - 1.5, ty + i * lineH, { align: 'right' }))
+          } else if (col.align === 'center') {
+            show.forEach((l, i) => doc.text(l, x + w / 2, ty + i * lineH, { align: 'center' }))
+          } else {
+            show.forEach((l, i) => doc.text(l, x + 1.5, ty + i * lineH))
+          }
+          x += w
+        })
+
+        y += rowH
+      }
+
+      doc.save(`Compras_${(proyNombre || 'proyecto').replace(/[^\w\s]/g,'').trim()}.pdf`)
+    } catch(e) { console.error(e) }
+    finally { setExportando(false) }
+  }
 
   const save = useCallback(async (r) => {
     setSaving(true)
@@ -1151,6 +1358,12 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               </button>
             )}
           </>
+        )}
+        {!isEmpty && !editMode && (
+          <button onClick={exportarPDF} disabled={exportando}
+            style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: exportando ? 0.7 : 1 }}>
+            {exportando ? 'Generando PDF…' : '↓ Exportar PDF'}
+          </button>
         )}
         {!isEmpty && (
           <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 4 }}>
