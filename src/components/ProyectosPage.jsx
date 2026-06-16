@@ -1107,7 +1107,10 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     const path = `${proyId}/${Date.now()}-${ri}.${ext}`
     setUploading(prev => ({ ...prev, [ri]: true }))
     const { error } = await supabase.storage.from('compras-imagenes').upload(path, file, { upsert: true })
-    if (!error) {
+    if (error) {
+      console.error('[compras-imagenes] upload error:', error)
+      alert('Error al subir imagen: ' + (error.message || JSON.stringify(error)))
+    } else {
       const { data: urlData } = supabase.storage.from('compras-imagenes').getPublicUrl(path)
       updateRow(ri, 'foto', urlData.publicUrl)
     }
