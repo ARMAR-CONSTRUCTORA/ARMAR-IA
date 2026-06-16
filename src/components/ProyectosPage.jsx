@@ -853,7 +853,9 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
     const data = utils.sheet_to_json(ws, { header: 1, defval: '', raw: true })
     if (!data.length) return
     const h = (data[0] || []).map(v => String(v ?? '').trim())
-    const r = data.slice(1).map(row =>
+    const r = data.slice(1)
+      .filter(row => row.some(v => v !== '' && v !== null && v !== undefined))
+      .map(row =>
       h.map((_, i) => {
         const v = row[i]
         if (v instanceof Date) return formatDate(v)
