@@ -1097,15 +1097,21 @@ const PDF_COLS = [
 ]
 
 async function fetchImageBase64(url) {
-  try {
-    const resp = await fetch(url)
-    const blob = await resp.blob()
-    return await new Promise(res => {
-      const r = new FileReader()
-      r.onload = () => res(r.result)
-      r.readAsDataURL(blob)
-    })
-  } catch { return null }
+  return new Promise(res => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width  = img.naturalWidth
+        canvas.height = img.naturalHeight
+        canvas.getContext('2d').drawImage(img, 0, 0)
+        res(canvas.toDataURL('image/jpeg', 0.85))
+      } catch { res(null) }
+    }
+    img.onerror = () => res(null)
+    img.src = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now()
+  })
 }
 
 function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
