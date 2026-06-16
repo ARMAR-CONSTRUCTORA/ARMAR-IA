@@ -55,6 +55,13 @@ function generateMonths(start, end) {
   while (cur <= last) { months.push(new Date(cur)); cur.setMonth(cur.getMonth() + 1) }
   return months
 }
+function generateWeeks(start, end) {
+  const weeks = [], cur = new Date(start)
+  // Avanzar al primer lunes
+  while (cur.getDay() !== 1) cur.setDate(cur.getDate() + 1)
+  while (cur <= end) { weeks.push(new Date(cur)); cur.setDate(cur.getDate() + 7) }
+  return weeks
+}
 function diffCalDias(a, b) {
   if (!a || !b) return 0
   return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000)
@@ -298,6 +305,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   const effectivePpd = hiddenColsW > 0 ? Math.min(24, ppd + hiddenColsW / totalDays) : ppd
   const timelineW = totalDays * effectivePpd
   const months    = generateMonths(minDate, maxDate)
+  const weeks     = generateWeeks(minDate, maxDate)
   const today     = new Date()
   const todayX    = Math.min(timelineW, Math.max(0, (today - minDate) / 86400000 * effectivePpd))
   const toPx      = (d) => Math.max(0, (toDate(d) - minDate) / 86400000 * effectivePpd)
@@ -438,8 +446,11 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
           </div>
         )}
         <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: isSubtarea ? 'white' : '#FAFAFA', overflow: 'hidden' }}>
+          {weeks.map((w, i) => (
+            <div key={'w'+i} style={{ position: 'absolute', left: Math.max(0, (w - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px dashed #D1D5DB', pointerEvents: 'none' }} />
+          ))}
           {months.map((m, i) => (
-            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px dashed #EBEBEB', pointerEvents: 'none' }} />
+            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px solid #D1D5DB', pointerEvents: 'none' }} />
           ))}
           {todayX > 0 && todayX < timelineW && (
             <div style={{ position: 'absolute', left: todayX, top: 0, bottom: 0, borderLeft: '2px solid var(--orange)', pointerEvents: 'none', zIndex: 2 }} />
@@ -484,8 +495,11 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
           <span style={{ fontSize: 9, fontWeight: 700, color: semaforo.color, background: 'white', padding: '2px 8px', borderRadius: 99 }}>{semaforo.label}</span>
         </div>
         <div style={{ flex: 1, minWidth: timelineW, position: 'relative', background: semaforo.bg, overflow: 'hidden' }}>
+          {weeks.map((w, i) => (
+            <div key={'w'+i} style={{ position: 'absolute', left: Math.max(0, (w - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px dashed rgba(0,0,0,0.1)', pointerEvents: 'none' }} />
+          ))}
           {months.map((m, i) => (
-            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px dashed rgba(0,0,0,0.06)', pointerEvents: 'none' }} />
+            <div key={i} style={{ position: 'absolute', left: Math.max(0, (m - minDate) / 86400000 * effectivePpd), top: 0, bottom: 0, borderLeft: '1px solid rgba(0,0,0,0.12)', pointerEvents: 'none' }} />
           ))}
           <div title={`${hito.nombre} — ${fmtShort(hito.fechaPrevista)}`} style={{ position: 'absolute', left: x - 6, top: '50%', transform: 'translateY(-50%) rotate(45deg)', width: 12, height: 12, background: semaforo.color, border: '2px solid white', boxShadow: '0 1px 3px rgba(0,0,0,0.3)' }} />
         </div>
@@ -1540,8 +1554,6 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
   const [exportando,      setExportando]       = useState(false)
   const [showExportModal, setShowExportModal]  = useState(false)
   const [hiddenCols,      setHiddenCols]       = useState(EMPTY_SET)
-  const [pendingExport,   setPendingExport]    = useState(false)
-  const ganttRef = useRef(null)
 
   const ppd       = PPD_LEVELS[zoomIdx].val
   const zoomLabel = PPD_LEVELS[zoomIdx].label
@@ -1941,125 +1953,284 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     finally { setExportando(false) }
   }
 
-  const exportarPDF = async () => {
+  const exportarPDF = async (hidden = EMPTY_SET) => {
     setExportando(true)
     try {
       const { jsPDF } = await import('jspdf')
-      const html2canvas = (await import('html2canvas')).default
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' })
-      const pageW = pdf.internal.pageSize.getWidth(), pageH = pdf.internal.pageSize.getHeight(), mg = 14
-      let y = mg
-      pdf.setFontSize(15); pdf.setFont('helvetica', 'bold'); pdf.text(project.name || '—', mg, y); y += 7
-      pdf.setFontSize(9); pdf.setFont('helvetica', 'normal')
-      const col2 = pageW / 2
-      pdf.text(`Ubicación: ${project.location || '—'}`, mg, y); pdf.text(`Responsable: ${project.responsible || '—'}`, col2, y); y += 5
-      pdf.text(`Inicio: ${fmtLong(project.startDate)}`, mg, y); pdf.text(`Fin estimado: ${fmtLong(project.endDate)}`, col2, y); y += 5
-      pdf.text(`Estado: ${project.status || '—'}`, mg, y); pdf.text(`Avance actual: ${avanceGeneral}%`, col2, y); y += 5
-      pdf.setDrawColor(220, 220, 220); pdf.line(mg, y, pageW - mg, y); y += 5
-      const scrollContainer = ganttRef.current?.querySelector('[data-gantt-scroll]')
-      const contentEl = ganttRef.current?.querySelector('[data-gantt-content]')
-      if (scrollContainer && contentEl) {
-        scrollContainer.scrollLeft = 0
-        await new Promise(r => setTimeout(r, 150))
-        const fullWidth = scrollContainer.scrollWidth
-        const prevOverflow = scrollContainer.style.overflowX
-        scrollContainer.style.overflowX = 'visible'
-        const hiddenEls = Array.from(contentEl.querySelectorAll('*')).filter(el => el.style.overflow === 'hidden' || el.style.overflowX === 'hidden' || el.style.overflowY === 'hidden')
-        const saved = hiddenEls.map(el => ({ el, overflow: el.style.overflow, overflowX: el.style.overflowX, overflowY: el.style.overflowY }))
-        hiddenEls.forEach(el => { if (el.style.overflow === 'hidden') el.style.overflow = 'visible'; if (el.style.overflowX === 'hidden') el.style.overflowX = 'visible'; if (el.style.overflowY === 'hidden') el.style.overflowY = 'visible' })
+      const mg = 10
 
-        // html2canvas no rasteriza bien el SVG de flechas de dependencia (overflow:visible + scale>1
-        // hace que el contenido quede mal posicionado/escalado en el PDF). Se oculta antes de la
-        // captura y se redibuja como imagen sobre el canvas resultante, en la misma posición y
-        // escala que ocupaba en el DOM, así el resultado coincide con lo que se ve en pantalla.
-        const arrowsSvg = contentEl.querySelector('[data-gantt-arrows]')
-        let arrowOffsetX = 0, arrowOffsetY = 0, arrowW = 0, arrowH = 0, contentW = 0, contentH = 0, arrowImg = null
-        if (arrowsSvg) {
-          const contentRect = contentEl.getBoundingClientRect()
-          const svgRect = arrowsSvg.getBoundingClientRect()
-          arrowOffsetX = svgRect.left - contentRect.left
-          arrowOffsetY = svgRect.top - contentRect.top
-          arrowW = svgRect.width
-          arrowH = svgRect.height
-          contentW = contentRect.width
-          contentH = contentRect.height
-          const svgClone = arrowsSvg.cloneNode(true)
-          svgClone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-          const svgData = new XMLSerializer().serializeToString(svgClone)
-          const svgUrl = `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgData)))}`
-          arrowImg = await new Promise(resolve => {
-            const img = new Image()
-            img.onload = () => resolve(img)
-            img.onerror = () => resolve(null)
-            img.src = svgUrl
-          })
-          arrowsSvg.style.display = 'none'
-        }
+      // ── Data ────────────────────────────────────────────────────────────────
+      const etapas = tareasNorm.filter(t => t.parentId === null)
+      const rows = []
+      etapas.forEach(e => { rows.push(e); tareasNorm.filter(t => t.parentId === e.id).forEach(s => rows.push(s)) })
 
-        const canvas = await html2canvas(contentEl, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false, width: fullWidth, windowWidth: fullWidth })
-        scrollContainer.style.overflowX = prevOverflow
-        saved.forEach(({ el, overflow, overflowX, overflowY }) => { el.style.overflow = overflow; el.style.overflowX = overflowX; el.style.overflowY = overflowY })
+      const validRows = rows.filter(t => t.fechaInicio && t.fechaFin)
+      if (!validRows.length) return
 
-        if (arrowsSvg) {
-          arrowsSvg.style.display = ''
-        }
+      const allD = [...validRows.map(t => new Date(t.fechaInicio+'T00:00:00')), ...validRows.map(t => new Date(t.fechaFin+'T00:00:00'))]
+      const minDate = new Date(Math.min(...allD)); minDate.setDate(1)
+      const maxDate = new Date(Math.max(...allD)); maxDate.setMonth(maxDate.getMonth()+1, 0)
+      const totalDays = Math.max(1, (maxDate - minDate) / 86400000)
 
-        // Componer flechas sobre un canvas nuevo para evitar estado residual de html2canvas
-        let finalCanvas = canvas
-        if (arrowImg) {
-          const scaleX = canvas.width / contentW, scaleY = canvas.height / contentH
-          const out = document.createElement('canvas')
-          out.width = canvas.width
-          out.height = canvas.height
-          const ctx = out.getContext('2d')
-          ctx.drawImage(canvas, 0, 0)
-          ctx.drawImage(arrowImg, arrowOffsetX * scaleX, arrowOffsetY * scaleY, arrowW * scaleX, arrowH * scaleY)
-          finalCanvas = out
-        }
-
-        // Paginar verticalmente: escalar al ancho de la página y cortar en filas de páginas
-        const imgW = pageW - mg * 2
-        const mmPerPx = imgW / finalCanvas.width
-        const firstPageAvail = pageH - y - mg   // mm disponibles en página 1 (debajo del header)
-        const otherPageAvail = pageH - 2 * mg   // mm disponibles en páginas siguientes
-        const firstSliceH = Math.round(firstPageAvail / mmPerPx)  // px a tomar en pág 1
-        const otherSliceH = Math.round(otherPageAvail / mmPerPx)  // px a tomar en págs siguientes
-
-        const sliceCanvas = document.createElement('canvas')
-        sliceCanvas.width = finalCanvas.width
-        const sliceCtx = sliceCanvas.getContext('2d')
-
-        let srcY = 0, firstPage = true
-        while (srcY < finalCanvas.height) {
-          const slicePx = firstPage ? firstSliceH : otherSliceH
-          const actualPx = Math.min(slicePx, finalCanvas.height - srcY)
-          sliceCanvas.height = actualPx
-          sliceCtx.clearRect(0, 0, sliceCanvas.width, actualPx)
-          sliceCtx.drawImage(finalCanvas, 0, srcY, finalCanvas.width, actualPx, 0, 0, finalCanvas.width, actualPx)
-          const sliceMmH = actualPx * mmPerPx
-          const sliceY = firstPage ? y : mg
-          if (!firstPage) pdf.addPage()
-          pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.85), 'JPEG', mg, sliceY, imgW, sliceMmH)
-          srcY += actualPx
-          firstPage = false
-        }
+      // ── Helpers ─────────────────────────────────────────────────────────────
+      const hexRgb = h => { const s = h.replace('#',''); return [parseInt(s.slice(0,2),16), parseInt(s.slice(2,4),16), parseInt(s.slice(4,6),16)] }
+      const getColor = t => { if (t.parentId===null) return t.color||'#6B7280'; const p = etapas.find(e=>e.id===t.parentId); return p?.color||'#6B7280' }
+      const fmtS = d => { if (!d) return '—'; const dt=new Date(d+'T00:00:00'); return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}` }
+      const fmtD = d => { if (!d) return '—'; const dt=new Date(d+'T00:00:00'); return dt.toLocaleDateString('es-AR',{day:'2-digit',month:'short'}).replace('.','') }
+      const fmtM = n => { if (!n) return '—'; const a=Math.abs(n); const s=n<0?'-':''; return s+(a>=1000000?'$'+(n/1000000).toFixed(1)+'M':a>=1000?'$'+Math.round(n/1000)+'k':'$'+Math.round(n)) }
+      const calcAdic = t => (t.adicionales||[]).reduce((s,a)=>s+(a.monto||0),0)
+      const getPresup = t => { if(t.parentId!==null) return t.presupuesto||0; const s=tareasNorm.filter(x=>x.parentId===t.id); return s.length?s.reduce((a,x)=>a+(x.presupuesto||0),0):t.presupuesto||0 }
+      const getAdic = t => { if(t.parentId!==null) return calcAdic(t); const s=tareasNorm.filter(x=>x.parentId===t.id); return s.length?s.reduce((a,x)=>a+calcAdic(x),0):calcAdic(t) }
+      const getPagos = t => {
+        const certs = certificados||[]
+        if (t.parentId===null) { const ids=new Set(tareasNorm.filter(x=>x.parentId===t.id).map(x=>x.id)); return certs.filter(c=>ids.has(c.tareaId)).reduce((s,c)=>s+(c.montoCertificado||0),0) }
+        return certs.filter(c=>c.tareaId===t.id).reduce((s,c)=>s+(c.montoCertificado||0),0)
       }
-      pdf.save(`Cronograma_${(project.name || 'obra').replace(/[^\w\s]/g, '').trim()}.pdf`)
-    } catch (err) { console.error('Error exportando PDF:', err) }
+
+      // ── Column definitions ───────────────────────────────────────────────────
+      const ALL_COLS = [
+        { key:'inicio',      label:'INICIO',   w:14, val:t=>fmtS(t.fechaInicio) },
+        { key:'fin',         label:'FIN EST.', w:14, val:t=>fmtS(t.fechaFin) },
+        { key:'duracion',    label:'DÍAS',     w:11, val:t=>t.parentId!==null?(t.duracionDias?`${t.duracionDias}d`:'—'):'—' },
+        { key:'avance',      label:'AVANCE',   w:13, val:t=>`${t.avanceActual||0}%` },
+        { key:'estado',      label:'ESTADO',   w:17, val:t=>t.estado||'—' },
+        { key:'presupuesto', label:'PRESUP.',  w:19, val:t=>fmtM(getPresup(t)) },
+        { key:'adicionales', label:'ADIC.',    w:16, val:t=>fmtM(getAdic(t)) },
+        { key:'subtotal',    label:'SUBTOTAL', w:19, val:t=>fmtM(getPresup(t)+getAdic(t)) },
+        { key:'pagos',       label:'PAGOS',    w:17, val:t=>fmtM(getPagos(t)) },
+        { key:'saldo',       label:'SALDO',    w:17, val:t=>fmtM(getPresup(t)+getAdic(t)-getPagos(t)) },
+      ]
+      const visCols = ALL_COLS.filter(c => !hidden.has(c.key))
+      const visColsW = visCols.reduce((s,c)=>s+c.w, 0)
+
+      // ── Page geometries ──────────────────────────────────────────────────────
+      const ROW_H   = 8     // mm per row (detail) — room for 2 lines of text
+      const HDR_H   = 7     // column header block height
+      const NAME_W  = 90    // name column width (detail)
+      const NAME_WS = 72    // name column width (summary)
+
+      // Detail: A3 landscape 420×297
+      const DW = 420, DH = 297
+      const ganttW_D = DW - 2*mg - NAME_W - visColsW
+      const mpd_D    = ganttW_D / totalDays   // mm per day (detail)
+
+      // Summary: A3 portrait 297×420
+      const SW = 297, SH = 420
+      // Summary shows only name + inicio + fin + avance + gantt (keep it clean)
+      const SUM_COLS = ALL_COLS.filter(c => ['inicio','fin','avance'].includes(c.key))
+      const sumColsW = SUM_COLS.reduce((s,c)=>s+c.w, 0)
+      const ganttW_S = SW - 2*mg - NAME_WS - sumColsW
+      const mpd_S    = ganttW_S / totalDays
+
+      // ── Draw header (project info) ───────────────────────────────────────────
+      const drawPageHeader = (doc, pgW) => {
+        let y = mg
+        doc.setFontSize(14); doc.setFont('helvetica','bold'); doc.setTextColor(20,20,20)
+        doc.text(project.name||'—', mg, y+4); y += 9
+        doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(80,80,80)
+        const c2 = pgW/2
+        doc.text(`Ubicación: ${project.location||'—'}`, mg, y); doc.text(`Responsable: ${project.responsible||'—'}`, c2, y); y += 5
+        doc.text(`Inicio: ${fmtD(project.startDate)}`, mg, y); doc.text(`Fin estimado: ${fmtD(project.endDate)}`, c2, y); y += 5
+        doc.text(`Estado: ${project.status||'—'}`, mg, y); doc.text(`Avance: ${avanceGeneral}%`, c2, y); y += 6
+        doc.setDrawColor(200,200,200); doc.setLineWidth(0.3); doc.line(mg, y, pgW-mg, y); y += 3
+        return y
+      }
+
+      // ── Draw column header row (months + weeks + col labels) ─────────────────
+      const drawColHeader = (doc, x0, nameW, cols, xGantt, ganttW, mpd, y) => {
+        const mH = HDR_H/2   // half for months, half for weeks
+
+        // Name cell
+        doc.setFillColor(243,244,246); doc.rect(x0, y, nameW, HDR_H, 'F')
+        doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.setTextColor(80,80,80)
+        doc.text('ETAPA / TAREA', x0+2, y+HDR_H-1.5)
+
+        // Info col cells
+        let cx = x0+nameW
+        for (const col of cols) {
+          doc.setFillColor(243,244,246); doc.rect(cx, y, col.w, HDR_H, 'F')
+          doc.setDrawColor(210,210,210); doc.setLineWidth(0.1); doc.line(cx, y, cx, y+HDR_H)
+          doc.setFontSize(5); doc.setFont('helvetica','bold'); doc.setTextColor(80,80,80)
+          const tw = doc.getTextWidth(col.label); doc.text(col.label, cx+col.w/2-tw/2, y+HDR_H-1.5)
+          cx += col.w
+        }
+
+        // Month headers (top half of gantt header)
+        let cur = new Date(minDate)
+        while (cur <= maxDate) {
+          const d0 = Math.max(0, (cur-minDate)/86400000)
+          const nxt = new Date(cur.getFullYear(), cur.getMonth()+1, 1)
+          const d1 = Math.min(totalDays, (nxt-minDate)/86400000)
+          const bx = xGantt+d0*mpd, bw = (d1-d0)*mpd
+          doc.setFillColor(243,244,246); doc.rect(bx, y, bw, mH, 'F')
+          doc.setDrawColor(210,210,210); doc.setLineWidth(0.1); doc.rect(bx, y, bw, mH, 'S')
+          const lbl = cur.toLocaleDateString('es-AR',{month:'short',year:'2-digit'})
+          doc.setFontSize(5.5); doc.setFont('helvetica','bold'); doc.setTextColor(60,60,60)
+          const tw = doc.getTextWidth(lbl); if (tw<bw-1) doc.text(lbl, bx+bw/2-tw/2, y+mH-1)
+          cur = nxt
+        }
+
+        // Week headers (bottom half of gantt header)
+        let wCur = new Date(minDate)
+        while (wCur.getDay()!==1) wCur.setDate(wCur.getDate()+1)
+        if ((wCur-minDate)/86400000 > 0) { const tmp=new Date(wCur); tmp.setDate(tmp.getDate()-7); if(tmp>=minDate||true) wCur=tmp }
+        while (wCur <= maxDate) {
+          const d0 = Math.max(0, (wCur-minDate)/86400000)
+          const d1 = Math.min(totalDays, d0+7)
+          const bx = xGantt+d0*mpd, bw = (d1-d0)*mpd
+          if (bx < xGantt+ganttW && bw > 0) {
+            doc.setFillColor(249,250,251); doc.rect(bx, y+mH, bw, mH, 'F')
+            doc.setDrawColor(220,220,220); doc.setLineWidth(0.1); doc.rect(bx, y+mH, bw, mH, 'S')
+            const lbl = fmtS(wCur.toISOString().slice(0,10))
+            doc.setFontSize(4.5); doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100)
+            const tw = doc.getTextWidth(lbl); if (tw<bw-0.5) doc.text(lbl, bx+bw/2-tw/2, y+HDR_H-1)
+          }
+          wCur.setDate(wCur.getDate()+7)
+        }
+
+        // Outer border
+        doc.setDrawColor(180,180,180); doc.setLineWidth(0.2)
+        doc.rect(x0, y, nameW+cols.reduce((s,c)=>s+c.w,0)+ganttW, HDR_H, 'S')
+        return y+HDR_H
+      }
+
+      // ── Pre-compute week X positions ─────────────────────────────────────────
+      const weekXPositions = (() => {
+        const xs = [], cur = new Date(minDate)
+        while (cur.getDay() !== 1) cur.setDate(cur.getDate() + 1)
+        while (cur <= maxDate) { xs.push((cur - minDate) / 86400000); cur.setDate(cur.getDate() + 7) }
+        return xs
+      })()
+      const monthXPositions = (() => {
+        const xs = [], cur = new Date(minDate.getFullYear(), minDate.getMonth(), 1)
+        while (cur <= maxDate) { xs.push((cur - minDate) / 86400000); cur.setMonth(cur.getMonth() + 1) }
+        return xs
+      })()
+
+      // ── Draw rows ────────────────────────────────────────────────────────────
+      const drawRows = (doc, slice, x0, nameW, cols, xGantt, ganttW, mpd, yStart, availH, rowH) => {
+        let y = yStart, count = 0
+        const totalW = nameW+cols.reduce((s,c)=>s+c.w,0)+ganttW
+
+        for (const t of slice) {
+          if (y+rowH > yStart+availH) break
+          const isE = t.parentId===null
+          const [cr,cg,cb] = hexRgb(getColor(t))
+
+          // Row bg
+          doc.setFillColor(isE?248:255, isE?248:255, isE?248:255)
+          doc.rect(x0, y, totalW, rowH, 'F')
+
+          // Color stripe for etapas
+          if (isE) { doc.setFillColor(cr,cg,cb); doc.rect(x0, y, 1.5, rowH, 'F') }
+
+          // Week grid lines inside gantt area (drawn after bg, before bars)
+          doc.setLineDashPattern([1, 1.5], 0)
+          doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.15)
+          weekXPositions.forEach(d => {
+            const x = xGantt + d * mpd
+            if (x >= xGantt && x <= xGantt + ganttW) doc.line(x, y, x, y + rowH)
+          })
+          // Month lines: solid, slightly darker
+          doc.setLineDashPattern([], 0)
+          doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.2)
+          monthXPositions.forEach(d => {
+            const x = xGantt + d * mpd
+            if (x >= xGantt && x <= xGantt + ganttW) doc.line(x, y, x, y + rowH)
+          })
+          doc.setLineDashPattern([], 0)
+
+          // Name (with wrapping — up to 2 lines)
+          const indent = isE ? 3.5 : 5
+          const nameFontSz = isE ? 6.5 : 6
+          doc.setFontSize(nameFontSz); doc.setFont('helvetica', isE?'bold':'normal'); doc.setTextColor(isE?20:60, isE?20:60, isE?20:60)
+          const parts = doc.splitTextToSize(t.nombre, nameW-indent-1.5)
+          const lineH = nameFontSz * 0.352 + 0.8  // pt→mm + leading
+          const textBlockH = Math.min(parts.length, 2) * lineH
+          const textY0 = y + (rowH - textBlockH) / 2 + lineH * 0.75
+          doc.text(parts[0], x0+indent, textY0)
+          if (parts.length > 1) { doc.text(parts[1], x0+indent, textY0 + lineH) }
+
+          // Info cells
+          let cx = x0+nameW
+          doc.setFontSize(5.5); doc.setFont('helvetica','normal'); doc.setTextColor(70,70,70)
+          const cellTextY = y + rowH * 0.58
+          for (const col of cols) {
+            const val = String(col.val(t)||'—')
+            doc.setDrawColor(228,228,228); doc.setLineWidth(0.1); doc.line(cx, y, cx, y+rowH)
+            const tw = doc.getTextWidth(val)
+            doc.text(val, cx + col.w/2 - Math.min(tw, col.w-1)/2, cellTextY)
+            cx += col.w
+          }
+
+          // Gantt bar
+          if (t.fechaInicio && t.fechaFin) {
+            const sd = (new Date(t.fechaInicio+'T00:00:00')-minDate)/86400000
+            const ed = (new Date(t.fechaFin+'T00:00:00')-minDate)/86400000+1
+            const bx = xGantt+sd*mpd, bw = Math.max(0.8, (ed-sd)*mpd)
+            const barY = y + (isE ? rowH*0.18 : rowH*0.22)
+            const barH = isE ? rowH*0.64 : rowH*0.56
+            doc.setFillColor(Math.min(255,cr+(isE?0:60)), Math.min(255,cg+(isE?0:60)), Math.min(255,cb+(isE?0:60)))
+            doc.roundedRect(bx, barY, bw, barH, 0.8, 0.8, 'F')
+            // Progress overlay
+            if (!isE && (t.avanceActual||0)>0) {
+              const pw = Math.max(0.8, bw*(t.avanceActual/100))
+              doc.setFillColor(cr,cg,cb); doc.roundedRect(bx, barY, pw, barH, 0.8, 0.8, 'F')
+            }
+          }
+
+          // Row bottom border
+          doc.setDrawColor(228,228,228); doc.setLineWidth(0.1)
+          doc.line(x0, y+rowH, x0+totalW, y+rowH)
+          y += rowH; count++
+        }
+
+        // Today line
+        const today = new Date()
+        if (today>=minDate && today<=maxDate) {
+          const tx = xGantt+(today-minDate)/86400000*mpd
+          doc.setDrawColor(234,88,12); doc.setLineWidth(0.5)
+          doc.line(tx, yStart, tx, y)
+        }
+
+        // Outer border
+        doc.setDrawColor(180,180,180); doc.setLineWidth(0.2); doc.rect(x0, yStart, totalW, y-yStart, 'S')
+        return count
+      }
+
+      // ── BUILD PDF ─────────────────────────────────────────────────────────────
+
+      // Page 1: portrait A3 summary
+      const pdf = new jsPDF({ orientation:'portrait', unit:'mm', format:'a3' })
+      let y = drawPageHeader(pdf, SW)
+      const xGantt_S = mg+NAME_WS+sumColsW
+      y = drawColHeader(pdf, mg, NAME_WS, SUM_COLS, xGantt_S, ganttW_S, mpd_S, y)
+      const availH_S = SH-y-mg
+      const sumRowH = Math.min(ROW_H, Math.max(3.5, availH_S/rows.length))
+      drawRows(pdf, rows, mg, NAME_WS, SUM_COLS, xGantt_S, ganttW_S, mpd_S, y, availH_S, sumRowH)
+
+      // Pages 2+: landscape A3 detail
+      const xGantt_D = mg+NAME_W+visColsW
+      let remaining = [...rows]
+      while (remaining.length > 0) {
+        pdf.addPage([DW, DH], 'landscape')
+        let yD = mg
+        yD = drawColHeader(pdf, mg, NAME_W, visCols, xGantt_D, ganttW_D, mpd_D, yD)
+        const availH_D = DH-yD-mg
+        const drawn = drawRows(pdf, remaining, mg, NAME_W, visCols, xGantt_D, ganttW_D, mpd_D, yD, availH_D, ROW_H)
+        if (drawn===0) break
+        remaining = remaining.slice(drawn)
+      }
+
+      pdf.save(`Cronograma_${(project.name||'obra').replace(/[^\w\s]/g,'').trim()}.pdf`)
+    } catch(err) { console.error('Error exportando PDF:', err) }
     finally { setExportando(false) }
   }
 
   // Espera a que la tabla se vuelva a renderizar sin las columnas ocultas antes de capturar el PDF
-  useEffect(() => {
-    if (!pendingExport) return
-    setPendingExport(false)
-    exportarPDF().finally(() => setHiddenCols(EMPTY_SET))
-  }, [pendingExport])
-
   const handleExportarPDF = (hidden) => {
     setShowExportModal(false)
-    setHiddenCols(hidden)
-    setPendingExport(true)
+    exportarPDF(hidden)
   }
 
   const btnStyle = (orange = false, danger = false, blue = false) => ({
@@ -2125,7 +2296,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
       </div>
 
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
-        <div ref={ganttRef} style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <TablaGantt
             tareas={tareasNorm}
             structuralMode={structuralMode}
