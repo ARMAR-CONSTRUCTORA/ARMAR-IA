@@ -718,7 +718,8 @@ const REVISION_OPTIONS = ['', 'R1', 'R2', 'R3', 'R4', 'R5']
 const REVISION_COLORS  = { R1: '#2563EB', R2: '#7C3AED', R3: '#D97706', R4: '#DC2626', R5: '#059669' }
 
 function isRevisionCol(header) {
-  return /revisi[oó]n/i.test(header)
+  // Solo "NR. REVISIÓN" o "REVISIÓN" puros — excluye "FECHA REVISIÓN", "CAMBIO CONTRA..."
+  return /^(nr\.?\s*)?revisi[oó]n$/i.test(header.trim())
 }
 function isFechaCol(header) {
   return /fecha/i.test(header)
@@ -742,26 +743,35 @@ function formatDate(v) {
   return `${dd}/${mm}/${yyyy}`
 }
 
+function getDocName(headers, row, ri) {
+  // Busca columna "DOCUMENTO", "NOMBRE PLANO", o la primera columna no-vacía
+  const docIdx = headers.findIndex(h => /documento|nombre\s*plano|plano/i.test(h))
+  const fallbackIdx = headers.findIndex((_, i) => row[i] && String(row[i]).trim())
+  const idx = docIdx >= 0 ? docIdx : fallbackIdx >= 0 ? fallbackIdx : 0
+  return String(row[idx] ?? '').trim() || `Fila ${ri + 1}`
+}
+
 function buildChangelog(prevHeaders, prevRows, nextHeaders, nextRows) {
   const changes = []
-  const nameCol = 0
   nextRows.forEach((row, ri) => {
     const prev = prevRows[ri]
-    if (!prev) { changes.push({ doc: row[nameCol] || `Fila ${ri + 1}`, tipo: 'nueva_fila' }); return }
+    const doc  = getDocName(nextHeaders, row, ri)
+    if (!prev) { changes.push({ doc, tipo: 'nueva_fila' }); return }
     row.forEach((cell, ci) => {
       if (String(cell) !== String(prev[ci] ?? '')) {
         changes.push({
-          doc:    row[nameCol] || `Fila ${ri + 1}`,
-          col:    nextHeaders[ci] || `Col ${ci + 1}`,
-          antes:  prev[ci] ?? '',
-          despues: cell,
+          doc,
+          col:    nextHeaders[ci] || `Columna ${ci + 1}`,
+          antes:  String(prev[ci] ?? ''),
+          despues: String(cell),
         })
       }
     })
   })
   if (prevRows.length > nextRows.length) {
     for (let ri = nextRows.length; ri < prevRows.length; ri++) {
-      changes.push({ doc: prevRows[ri][nameCol] || `Fila ${ri + 1}`, tipo: 'fila_eliminada' })
+      const doc = getDocName(prevHeaders, prevRows[ri], ri)
+      changes.push({ doc, tipo: 'fila_eliminada' })
     }
   }
   return changes
@@ -771,9 +781,9 @@ function formatChangelogText(changes, proyNombre) {
   const fecha = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
   const lines = [`*Actualización de documentación — ${proyNombre}*`, `_${fecha}_`, '']
   changes.forEach(c => {
-    if (c.tipo === 'nueva_fila')      lines.push(`➕ Nuevo: ${c.doc}`)
-    else if (c.tipo === 'fila_eliminada') lines.push(`❌ Eliminado: ${c.doc}`)
-    else lines.push(`📝 ${c.doc} · ${c.col}: ${c.antes || '—'} → ${c.despues || '—'}`)
+    if (c.tipo === 'nueva_fila')        lines.push(`➕ *Nuevo documento:* ${c.doc}`)
+    else if (c.tipo === 'fila_eliminada') lines.push(`❌ *Eliminado:* ${c.doc}`)
+    else lines.push(`📄 *${c.doc}*\n   ${c.col}: ${c.antes || '(vacío)'} → *${c.despues || '(vacío)'}*`)
   })
   return lines.join('\n')
 }
