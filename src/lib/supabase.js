@@ -659,6 +659,7 @@ function fromDbProyectoArmar(row) {
     contactoArquitectoExterno:   row.contacto_arquitecto_externo   || '',
     linkDocumentacion:           row.link_documentacion            || '',
     avanceTotal:                 row.avance_total                  ?? 0,
+    documentacion:               row.documentacion                 ?? null,
   }
 }
 
@@ -684,6 +685,7 @@ function toDbProyectoArmar(p) {
     contacto_arquitecto_externo: p.contactoArquitectoExterno     ?? null,
     link_documentacion:          p.linkDocumentacion             ?? null,
     avance_total:                p.avanceTotal                   ?? 0,
+    documentacion:               p.documentacion                 ?? null,
   }
 }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import LocationAutocomplete from './LocationAutocomplete'
 import {
   loadProyectosArmar,
@@ -712,7 +712,185 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
 
 // ─── Card de proyecto ─────────────────────────────────────────────────────────
 
-function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate }) {
+// ─── Tabla de documentación ───────────────────────────────────────────────────
+
+function TablaDocumentacion({ docData, isEditor, onSave }) {
+  const [headers, setHeaders] = useState(docData?.headers || [])
+  const [rows,    setRows]    = useState(docData?.rows    || [])
+  const [saving,  setSaving]  = useState(false)
+  const [dirty,   setDirty]   = useState(false)
+  const fileRef = useRef()
+
+  const save = useCallback(async (h, r) => {
+    setSaving(true)
+    await onSave({ headers: h, rows: r })
+    setSaving(false)
+    setDirty(false)
+  }, [onSave])
+
+  const handleFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const { read, utils } = await import('xlsx')
+    const buf  = await file.arrayBuffer()
+    const wb   = read(buf)
+    const ws   = wb.Sheets[wb.SheetNames[0]]
+    const data = utils.sheet_to_json(ws, { header: 1, defval: '' })
+    if (!data.length) return
+    const h = (data[0] || []).map(String)
+    const r = data.slice(1).map(row => h.map((_, i) => String(row[i] ?? '')))
+    setHeaders(h)
+    setRows(r)
+    setDirty(true)
+    e.target.value = ''
+  }
+
+  const updateCell = (ri, ci, val) => {
+    setRows(prev => prev.map((row, i) => i === ri ? row.map((c, j) => j === ci ? val : c) : row))
+    setDirty(true)
+  }
+
+  const updateHeader = (ci, val) => {
+    setHeaders(prev => prev.map((h, i) => i === ci ? val : h))
+    setDirty(true)
+  }
+
+  const addRow = () => {
+    setRows(prev => [...prev, headers.map(() => '')])
+    setDirty(true)
+  }
+
+  const deleteRow = (ri) => {
+    setRows(prev => prev.filter((_, i) => i !== ri))
+    setDirty(true)
+  }
+
+  const addCol = () => {
+    const label = `Columna ${headers.length + 1}`
+    setHeaders(prev => [...prev, label])
+    setRows(prev => prev.map(r => [...r, '']))
+    setDirty(true)
+  }
+
+  const deleteCol = (ci) => {
+    setHeaders(prev => prev.filter((_, i) => i !== ci))
+    setRows(prev => prev.map(r => r.filter((_, i) => i !== ci)))
+    setDirty(true)
+  }
+
+  const isEmpty = !headers.length
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        {isEditor && (
+          <>
+            <button
+              onClick={() => fileRef.current?.click()}
+              style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: blue, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}
+              onMouseEnter={e => { e.currentTarget.style.background = blueLight }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'white' }}>
+              ↑ Importar Excel
+            </button>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFile} />
+            {!isEmpty && (
+              <>
+                <button onClick={addRow}
+                  style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  + Fila
+                </button>
+                <button onClick={addCol}
+                  style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  + Columna
+                </button>
+              </>
+            )}
+            {dirty && (
+              <button onClick={() => save(headers, rows)}
+                disabled={saving}
+                style={{ padding: '6px 14px', borderRadius: 7, border: 'none', background: green, color: 'white', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.7 : 1 }}>
+                {saving ? 'Guardando…' : '✓ Guardar'}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Tabla */}
+      {isEmpty ? (
+        <div style={{ padding: '32px 0', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
+          {isEditor
+            ? 'Importá un Excel para cargar la tabla de documentación.'
+            : 'Sin documentación cargada.'}
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto', borderRadius: 8, border: `1px solid ${border}` }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#F3F4F6' }}>
+                {headers.map((h, ci) => (
+                  <th key={ci} style={{ padding: '7px 10px', borderBottom: `1px solid ${border}`, borderRight: ci < headers.length - 1 ? `1px solid ${border}` : 'none', fontWeight: 700, color: dark, whiteSpace: 'nowrap', position: 'relative', minWidth: 100 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      {isEditor ? (
+                        <input
+                          value={h}
+                          onChange={e => updateHeader(ci, e.target.value)}
+                          style={{ flex: 1, border: 'none', background: 'transparent', fontWeight: 700, fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none', minWidth: 60 }}
+                        />
+                      ) : (
+                        <span style={{ flex: 1 }}>{h}</span>
+                      )}
+                      {isEditor && (
+                        <button onClick={() => deleteCol(ci)}
+                          style={{ flexShrink: 0, border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 11, padding: '0 2px', lineHeight: 1 }}
+                          title="Eliminar columna">×</button>
+                      )}
+                    </div>
+                  </th>
+                ))}
+                {isEditor && <th style={{ width: 32, borderBottom: `1px solid ${border}` }} />}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} style={{ borderBottom: ri < rows.length - 1 ? `1px solid ${border}` : 'none' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#FAFAF9'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                  {row.map((cell, ci) => (
+                    <td key={ci} style={{ padding: '5px 8px', borderRight: ci < row.length - 1 ? `1px solid ${border}` : 'none', verticalAlign: 'top' }}>
+                      {isEditor ? (
+                        <input
+                          value={cell}
+                          onChange={e => updateCell(ri, ci, e.target.value)}
+                          style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 12, color: dark, fontFamily: 'inherit', outline: 'none' }}
+                        />
+                      ) : (
+                        <span>{cell}</span>
+                      )}
+                    </td>
+                  ))}
+                  {isEditor && (
+                    <td style={{ textAlign: 'center', padding: '4px' }}>
+                      <button onClick={() => deleteRow(ri)}
+                        style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }}
+                        title="Eliminar fila">🗑</button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate, onSaveDoc }) {
+  const [activeTab, setActiveTab] = useState('checklist')
   const estadoMeta   = ESTADO_COLORS[p.estadoGeneral] || ESTADO_COLORS['En análisis']
   const avance       = checklistItems ? calcAvanceTotal(checklistItems, p.tipoEncargo) : (p.avanceTotal ?? 0)
   const tipoLabel    = TIPOS_ENCARGO.find(t => t.value === p.tipoEncargo)?.label || p.tipoEncargo || '—'
@@ -836,27 +1014,61 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
         </div>
       )}
 
-      {/* ── Checklist ── */}
+      {/* ── Panel expandido ── */}
       {isExpanded && (
-        <div style={{ borderTop: `1px solid ${border}`, padding: 16, background: light }}>
-          {loadingChecklist ? (
-            <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: '12px 0' }}>Cargando checklist…</p>
-          ) : !checklistItems?.length ? (
-            <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: '12px 0' }}>Sin ítems de checklist.</p>
-          ) : (
-            etapas.map(etapa => {
-              const etapaItems = checklistItems.filter(it => it.etapa === etapa)
-              if (!etapaItems.length) return null
-              return (
-                <EtapaAcordeon
-                  key={etapa}
-                  etapa={etapa}
-                  items={etapaItems}
-                  onUpdateItem={onUpdateItem}
-                />
+        <div style={{ borderTop: `1px solid ${border}`, background: light }}>
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${border}`, background: 'white' }}>
+            {[
+              { key: 'checklist',     label: 'Checklist' },
+              { key: 'documentacion', label: 'Documentación' },
+            ].map(tab => (
+              <button key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                style={{
+                  padding: '9px 18px', border: 'none', background: 'none', fontFamily: 'inherit',
+                  fontSize: 12, fontWeight: activeTab === tab.key ? 800 : 500,
+                  color: activeTab === tab.key ? orange : mid,
+                  borderBottom: activeTab === tab.key ? `2px solid ${orange}` : '2px solid transparent',
+                  cursor: 'pointer', transition: 'all 0.15s',
+                }}>
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Contenido del tab activo */}
+          <div style={{ padding: 16 }}>
+            {activeTab === 'checklist' && (
+              loadingChecklist ? (
+                <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: '12px 0' }}>Cargando checklist…</p>
+              ) : !checklistItems?.length ? (
+                <p style={{ fontSize: 12, color: '#9CA3AF', textAlign: 'center', padding: '12px 0' }}>Sin ítems de checklist.</p>
+              ) : (
+                etapas.map(etapa => {
+                  const etapaItems = checklistItems.filter(it => it.etapa === etapa)
+                  if (!etapaItems.length) return null
+                  return (
+                    <EtapaAcordeon
+                      key={etapa}
+                      etapa={etapa}
+                      items={etapaItems}
+                      onUpdateItem={onUpdateItem}
+                    />
+                  )
+                })
               )
-            })
-          )}
+            )}
+
+            {activeTab === 'documentacion' && (
+              <TablaDocumentacion
+                key={p.id}
+                docData={p.documentacion}
+                isEditor={isEditor}
+                onSave={docData => onSaveDoc(p.id, docData)}
+              />
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -946,6 +1158,13 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
     setConfirmDeleteId(null)
   }
 
+  const handleSaveDoc = async (proyId, docData) => {
+    const proy = proyectos.find(p => p.id === proyId)
+    if (!proy) return
+    const updated = await upsertProyectoArmar({ ...proy, documentacion: docData })
+    if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
+  }
+
   const handleUpdateItem = async (item) => {
     const updated = await upsertChecklistItem(item)
     if (!updated) return
@@ -1032,6 +1251,7 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
               projects={projects}
               cronogramas={cronogramas}
               onNavigate={onNavigate}
+              onSaveDoc={handleSaveDoc}
             />
           ))}
         </div>
