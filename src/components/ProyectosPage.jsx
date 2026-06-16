@@ -919,6 +919,10 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
                   style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                   + Columna
                 </button>
+                <button onClick={() => { if (window.confirm('¿Eliminar el listado completo?')) { setHeaders([]); setRows([]); setDirty(true) } }}
+                  style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid #FCA5A5`, background: 'white', color: red, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  🗑 Eliminar listado
+                </button>
               </>
             )}
             {dirty && (
