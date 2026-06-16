@@ -1258,8 +1258,10 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
 
           if (col.type === 'link') {
             if (raw) {
+              const ty = y + rowH / 2 + 2
               doc.setTextColor(37, 99, 235); doc.setFont('helvetica', 'bold')
-              doc.text('LINK', x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+              doc.text('LINK', x + w / 2, ty, { align: 'center' })
+              doc.link(x, y, w, rowH, { url: raw })
               doc.setTextColor(30,30,30)
             }
             x += w; return
