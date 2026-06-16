@@ -840,8 +840,143 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
   const [saving,    setSaving]    = useState(false)
   const [dirty,     setDirty]     = useState(false)
   const [changelog, setChangelog] = useState(null)
+  const [exportando, setExportando] = useState(false)
   const prevRef = useRef({ headers: docData?.headers || [], rows: docData?.rows || [] })
   const fileRef = useRef()
+
+  const exportarPDF = async () => {
+    if (!headers.length) return
+    setExportando(true)
+    try {
+      const { jsPDF } = await import('jspdf')
+
+      // A3 landscape: 420×297mm
+      const doc  = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a3' })
+      const PW = 420, PH = 297, MG = 10
+      const usableW = PW - MG * 2
+
+      // Anchos de columna proporcionales al contenido
+      const MIN_W = 18, MAX_W = 80
+      const rawW = headers.map(h => {
+        if (isRevisionCol(h)) return 20
+        if (isFechaCol(h))    return 26
+        if (/obs|cambio|nota/i.test(h)) return MAX_W
+        if (/nombre|modelo|descripci/i.test(h)) return 55
+        return 30
+      })
+      const rawTotal = rawW.reduce((s, w) => s + w, 0)
+      const scale = usableW / Math.max(rawTotal, usableW)
+      const colW = rawW.map(w => Math.min(MAX_W, Math.max(MIN_W, w * scale)))
+      // Redistribuir si excede usableW
+      const totalW = colW.reduce((s, w) => s + w, 0)
+      const adjW = colW.map(w => w * usableW / totalW)
+
+      const ROW_H  = 6.5
+      const HDR_H  = 7
+      const THDR_H = 6
+      const fecha  = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' })
+
+      let pageNum = 1
+      const drawPageHeader = () => {
+        doc.setFillColor(26, 26, 46)
+        doc.rect(MG, MG, usableW, 12, 'F')
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(255,255,255)
+        doc.text('LISTADO DE DOCUMENTACIÓN', PW / 2, MG + 7.5, { align: 'center' })
+        doc.setFontSize(8); doc.setFont('helvetica', 'normal')
+        doc.text(proyNombre || '', MG + 3, MG + 4.5)
+        doc.text(fecha, PW - MG - 3, MG + 4.5, { align: 'right' })
+        doc.text(`Página ${pageNum}`, PW - MG - 3, MG + 10, { align: 'right' })
+        doc.setTextColor(0,0,0)
+        pageNum++
+      }
+
+      const drawTableHeader = (y) => {
+        doc.setFillColor(243, 244, 246)
+        doc.rect(MG, y, usableW, THDR_H, 'F')
+        doc.setDrawColor(200,200,200); doc.setLineWidth(0.2)
+        doc.line(MG, y + THDR_H, MG + usableW, y + THDR_H)
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(5.5); doc.setTextColor(30,30,30)
+        let x = MG
+        headers.forEach((h, ci) => {
+          const w = adjW[ci]
+          const label = doc.splitTextToSize(h, w - 2)[0]
+          doc.text(label, x + 1.5, y + THDR_H - 1.5)
+          x += w
+        })
+      }
+
+      drawPageHeader()
+      let y = MG + 13
+      drawTableHeader(y)
+      y += THDR_H
+
+      rows.forEach((row, ri) => {
+        const isHdr = isRubroHeader(headers, row)
+        const rowH  = isHdr ? HDR_H : ROW_H
+
+        if (y + rowH > PH - MG) {
+          doc.addPage([420, 297], 'landscape')
+          drawPageHeader()
+          y = MG + 13
+          drawTableHeader(y)
+          y += THDR_H
+        }
+
+        // Fondo
+        if (isHdr) {
+          doc.setFillColor(45, 45, 78); doc.rect(MG, y, usableW, rowH, 'F')
+        } else if (ri % 2 === 0) {
+          doc.setFillColor(250, 250, 249); doc.rect(MG, y, usableW, rowH, 'F')
+        }
+
+        doc.setDrawColor(220,220,220); doc.setLineWidth(0.15)
+        doc.line(MG, y + rowH, MG + usableW, y + rowH)
+
+        let x = MG
+        headers.forEach((h, ci) => {
+          const w   = adjW[ci]
+          const val = String(row[ci] ?? '')
+          const isRev = isRevisionCol(h)
+
+          doc.setFont('helvetica', isHdr ? 'bold' : 'normal')
+          doc.setFontSize(isHdr ? 7 : 6.5)
+
+          if (isHdr) {
+            doc.setTextColor(255,255,255)
+            const parts = doc.splitTextToSize(val, w - 2)
+            doc.text(parts[0] || '', x + 1.5, y + rowH / 2 + 2)
+            doc.setTextColor(30,30,30)
+            x += w; return
+          }
+
+          if (isRev && val) {
+            // Chip de revisión
+            const [r,g,b] = { R1:[37,99,235], R2:[124,58,237], R3:[217,119,6], R4:[220,38,38], R5:[5,150,105], R6:[8,145,178], R7:[147,51,234], R8:[180,83,9], R9:[190,18,60], R10:[30,64,175] }[val] || [100,100,100]
+            doc.setFillColor(r,g,b,0.12)
+            const chipW = Math.min(w-3, 14), chipH = 4, chipX = x + (w - chipW) / 2, chipY = y + (rowH - chipH) / 2
+            doc.roundedRect(chipX, chipY, chipW, chipH, 1, 1, 'F')
+            doc.setTextColor(r,g,b); doc.setFont('helvetica','bold'); doc.setFontSize(6)
+            doc.text(val, x + w/2, y + rowH/2 + 1.5, { align:'center' })
+            doc.setTextColor(30,30,30)
+            x += w; return
+          }
+
+          doc.setTextColor(30,30,30)
+          const parts = doc.splitTextToSize(val, w - 2)
+          const show  = parts.slice(0,2)
+          const lh    = 6.5 * 0.352 + 0.7
+          const ty    = y + (rowH - show.length * lh) / 2 + lh * 0.75
+          show.forEach((l, i) => doc.text(l, x + 1.5, ty + i * lh))
+          x += w
+        })
+
+        y += rowH
+      })
+
+      doc.save(`Documentacion_${(proyNombre||'proyecto').replace(/[^\w\s]/g,'').trim()}.pdf`)
+    } catch(e) { console.error(e) }
+    finally { setExportando(false) }
+  }
 
   const save = useCallback(async (h, r) => {
     const changes = buildChangelog(prevRef.current.headers, prevRef.current.rows, h, r)
@@ -939,6 +1074,12 @@ function TablaDocumentacion({ docData, isEditor, onSave, proyNombre }) {
           <button onClick={() => setChangelog(buildChangelog([], [], headers, rows))}
             style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Ver último informe
+          </button>
+        )}
+        {!isEmpty && (
+          <button onClick={exportarPDF} disabled={exportando}
+            style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: exportando ? 0.7 : 1 }}>
+            {exportando ? 'Generando PDF…' : '↓ Exportar PDF'}
           </button>
         )}
       </div>

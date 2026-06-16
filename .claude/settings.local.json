@@ -8,7 +8,14 @@
       "Bash(git add *)",
       "Bash(git rm *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Read(//c/Users/Usuario/**)",
+      "Bash(find Desktop Downloads -iname \"*cronograma*\")",
+      "Bash(sort -k6,7)",
+      "Bash(npm run *)",
+      "Bash(curl -s http://localhost:5173 -o /dev/null -w \"%{http_code}\\\\n\")",
+      "Bash(curl -s \"https://sljsruoswqqvtnpxfymr.supabase.co/rest/v1/projects?select=id,name&name=ilike.*MADRE*\" -H \"apikey: sb_publishable__5tM6eiZb-DQkUJyYBhjPQ_SIaUz3Wm\")",
+      "Bash(curl -s \"https://sljsruoswqqvtnpxfymr.supabase.co/rest/v1/cronogramas?select=id,project_id,tareas&project_id=eq.$\\(curl -s \"https://sljsruoswqqvtnpxfymr.supabase.co/rest/v1/projects?select=id,name&name=ilike.*MADRE*\" -H \"apikey: sb_publishable__5tM6eiZb-DQkUJyYBhjPQ_SIaUz3Wm\")"
     ]
   },
   "hooks": {
