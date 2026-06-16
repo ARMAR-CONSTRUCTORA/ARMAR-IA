@@ -1079,11 +1079,14 @@ function calcTot(row) {
 }
 
 function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
-  const [rows,    setRows]    = useState(comprasData?.rows || [])
-  const [saving,  setSaving]  = useState(false)
-  const [dirty,   setDirty]   = useState(false)
+  const [rows,      setRows]      = useState(comprasData?.rows || [])
+  const [saving,    setSaving]    = useState(false)
+  const [dirty,     setDirty]     = useState(false)
   const [uploading, setUploading] = useState({})
+  const [editMode,  setEditMode]  = useState(false)
+  const [fotoModal, setFotoModal] = useState(null) // { url, modelo, marca, ubicacion }
   const fileRefs = useRef({})
+  const editing = isEditor && editMode
 
   const save = useCallback(async (r) => {
     setSaving(true)
@@ -1124,6 +1127,12 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       {/* Toolbar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {isEditor && (
+          <button onClick={() => { setEditMode(m => !m); if (dirty) save(rows) }}
+            style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${editMode ? orange : border}`, background: editMode ? orangeLight : 'white', color: editMode ? orange : mid, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {editMode ? '✓ Cerrar edición' : '✏ Editar listado'}
+          </button>
+        )}
+        {editing && (
           <>
             <button onClick={addRow}
               style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -1164,7 +1173,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                     {col.label}
                   </th>
                 ))}
-                {isEditor && <th style={{ width: 28, borderBottom: `1px solid ${border}` }} />}
+                {editing && <th style={{ width: 28, borderBottom: `1px solid ${border}` }} />}
               </tr>
             </thead>
             <tbody>
@@ -1189,22 +1198,25 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                           <td key={col.key} style={{ ...cellStyle, textAlign: 'center' }}>
                             {val ? (
                               <div style={{ position: 'relative', display: 'inline-block' }}>
-                                <img src={val} alt="" style={{ width: 52, height: 40, objectFit: 'contain', borderRadius: 4, border: `1px solid ${border}`, display: 'block' }} />
-                                {isEditor && (
+                                <img
+                                  src={val} alt=""
+                                  onClick={() => !editing && setFotoModal({ url: val, modelo: row.modelo, marca: row.marca, ubicacion: row.ubicacion, categoria: row.categoria })}
+                                  style={{ width: 52, height: 40, objectFit: 'contain', borderRadius: 4, border: `1px solid ${border}`, display: 'block', cursor: editing ? 'default' : 'zoom-in' }} />
+                                {editing && (
                                   <button onClick={() => fileRefs.current[ri]?.click()}
                                     style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', border: 'none', borderRadius: 4, cursor: 'pointer', color: 'white', fontSize: 13, opacity: 0, transition: 'opacity 0.15s' }}
                                     onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                                     onMouseLeave={e => e.currentTarget.style.opacity = '0'}>✎</button>
                                 )}
                               </div>
-                            ) : isEditor ? (
+                            ) : editing ? (
                               <button onClick={() => fileRefs.current[ri]?.click()}
                                 disabled={uploading[ri]}
                                 style={{ width: 52, height: 40, borderRadius: 6, border: `1px dashed ${border}`, background: '#FAFAF9', color: '#9CA3AF', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {uploading[ri] ? '…' : '+'}
                               </button>
                             ) : null}
-                            {isEditor && (
+                            {editing && (
                               <input type="file" accept="image/*" style={{ display: 'none' }}
                                 ref={el => fileRefs.current[ri] = el}
                                 onChange={e => handleImageUpload(ri, e.target.files?.[0])} />
@@ -1216,7 +1228,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       if (col.type === 'check') {
                         return (
                           <td key={col.key} style={{ ...cellStyle, textAlign: 'center' }}>
-                            {isEditor ? (
+                            {editing ? (
                               <input type="checkbox" checked={!!val} onChange={e => updateRow(ri, col.key, e.target.checked)}
                                 style={{ width: 15, height: 15, cursor: 'pointer', accentColor: green }} />
                             ) : val ? (
@@ -1229,7 +1241,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       if (col.type === 'link') {
                         return (
                           <td key={col.key} style={{ ...cellStyle, textAlign: 'center' }}>
-                            {isEditor ? (
+                            {editing ? (
                               <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
                                 placeholder="URL"
                                 style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: blue, fontFamily: 'inherit', outline: 'none' }} />
@@ -1255,7 +1267,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       if (col.type === 'date') {
                         return (
                           <td key={col.key} style={cellStyle}>
-                            {isEditor ? (
+                            {editing ? (
                               <input type="date" value={val}
                                 onChange={e => updateRow(ri, col.key, e.target.value)}
                                 style={{ border: 'none', background: 'transparent', fontSize: 11, color: isHeader ? 'white' : dark, fontFamily: 'inherit', outline: 'none', width: '100%' }} />
@@ -1274,7 +1286,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       const fontW     = isHeader && (isItemCol || isCatCol) ? 800 : 400
                       return (
                         <td key={col.key} style={{ ...cellStyle, textAlign: isNum ? 'right' : 'left' }}>
-                          {isEditor ? (
+                          {editing ? (
                             <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
                               style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
                           ) : (
@@ -1283,7 +1295,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                         </td>
                       )
                     })}
-                    {isEditor && (
+                    {editing && (
                       <td style={{ textAlign: 'center', padding: 3, borderRight: 'none' }}>
                         <button onClick={() => deleteRow(ri)}
                           style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 12, padding: 0 }}>🗑</button>
@@ -1294,6 +1306,30 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Modal foto ampliada */}
+      {fotoModal && (
+        <div onClick={() => setFotoModal(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 24 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: 16, maxWidth: 560, width: '100%', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.4)' }}>
+            <div style={{ background: dark, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: 'white', fontWeight: 800, fontSize: 14 }}>{fotoModal.modelo || '—'}</div>
+                <div style={{ color: '#9CA3AF', fontSize: 11, marginTop: 2 }}>
+                  {[fotoModal.marca, fotoModal.categoria, fotoModal.ubicacion].filter(Boolean).join(' · ')}
+                </div>
+              </div>
+              <button onClick={() => setFotoModal(null)}
+                style={{ background: 'none', border: 'none', color: '#9CA3AF', fontSize: 22, cursor: 'pointer', lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, background: '#F9FAFB' }}>
+              <img src={fotoModal.url} alt={fotoModal.modelo}
+                style={{ maxWidth: '100%', maxHeight: 400, objectFit: 'contain', borderRadius: 8 }} />
+            </div>
+          </div>
         </div>
       )}
     </div>
