@@ -16,7 +16,7 @@ import Toast from './components/Toast'
 
 import {
   supabase,
-  loadProjects, upsertProject, deleteProject,
+  loadProjects, upsertProject, deleteProject, vincularObraAProyecto,
   loadCronogramasAll, upsertCronograma, deleteCronograma,
   loadTeamMembers, upsertTeamMember, deleteTeamMember,
   loadProyectosArmar,
@@ -172,11 +172,8 @@ function App() {
   const closeModal = () => { setModalOpen(false); setEditing(null); setPrefillProjectData(null) }
 
   const handleVincularObra = async (obraId, proyectoArmarId) => {
-    const obra = projects.find(p => String(p.id) === String(obraId))
-    if (!obra) return
-    const updated = { ...obra, proyectoArmarId }
-    setProjects(prev => prev.map(p => String(p.id) === String(obraId) ? updated : p))
-    await upsertProject(updated)
+    const result = await vincularObraAProyecto(obraId, proyectoArmarId)
+    if (result) setProjects(prev => prev.map(p => String(p.id) === String(obraId) ? result : p))
   }
   const handleNavigate = (page) => { setActivePage(page); setMenuOpen(false) }
 

@@ -234,9 +234,24 @@ export async function loadProjects() {
 }
 
 export async function upsertProject(project) {
-  const { error } = await supabase.from('projects').upsert(toDbProject(project))
+  const { data, error } = await supabase
+    .from('projects')
+    .upsert(toDbProject(project), { onConflict: 'id' })
+    .select()
+    .single()
   if (error) { console.error('upsertProject:', error); return null }
-  return { success: true }
+  return fromDbProject(data)
+}
+
+export async function vincularObraAProyecto(obraId, proyectoArmarId) {
+  const { data, error } = await supabase
+    .from('projects')
+    .update({ proyecto_armar_id: proyectoArmarId || null })
+    .eq('id', obraId)
+    .select()
+    .single()
+  if (error) { console.error('vincularObraAProyecto:', error); return null }
+  return fromDbProject(data)
 }
 
 export async function deleteProject(id) {
