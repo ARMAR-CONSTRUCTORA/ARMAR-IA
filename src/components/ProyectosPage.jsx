@@ -623,7 +623,7 @@ function ModalVincularObra({ proy, projects, onCrearObra, onVincularObra, onClos
   const [obraId, setObraId] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const obrasSinProyecto = (projects || []).filter(p => !p.proyectoArmarId)
+  const obrasSinProyecto = (projects || []).filter(p => !p.proyectoArmarId || p.proyectoArmarId === proy.id)
 
   const handleCrearNueva = () => {
     onCrearObra({
