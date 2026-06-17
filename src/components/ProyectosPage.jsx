@@ -1262,7 +1262,8 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const [uploading,   setUploading]   = useState({})
   const [editMode,    setEditMode]    = useState(false)
   const [fotoModal,   setFotoModal]   = useState(null)
-  const [exportando,  setExportando]  = useState(false)
+  const [exportando,          setExportando]          = useState(false)
+  const [exportandoRellenable, setExportandoRellenable] = useState(false)
   const fileRefs = useRef({})
   const editing = isEditor && editMode
 
@@ -1444,6 +1445,222 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     finally { setExportando(false) }
   }
 
+  const exportarPDFRellenable = async () => {
+    setExportandoRellenable(true)
+    try {
+      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib')
+
+      const pdfDoc = await PDFDocument.create()
+      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+      const fontReg  = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      const form     = pdfDoc.getForm()
+
+      // A3 landscape en puntos (1 mm = 2.8346 pt)
+      const PT = 2.8346
+      const PW = Math.round(420 * PT), PH = Math.round(297 * PT)
+      const MG = Math.round(10 * PT)
+      const usableW = PW - MG * 2
+
+      // Columnas versión cliente — sin precios
+      const COLS = [
+        { key: 'item',      label: 'ITEM',       w: 0.04, type: 'static' },
+        { key: 'foto',      label: 'FOTO',       w: 0.09, type: 'imagen' },
+        { key: 'ubicacion', label: 'UBICACIÓN',  w: 0.12, type: 'static' },
+        { key: 'categoria', label: 'CATEGORÍA',  w: 0.10, type: 'static' },
+        { key: 'marca',     label: 'MARCA',      w: 0.08, type: 'static' },
+        { key: 'modelo',    label: 'MODELO',     w: 0.18, type: 'static' },
+        { key: 'cant',      label: 'CANT.',      w: 0.05, type: 'static' },
+        { key: 'link',      label: 'LINK',       w: 0.05, type: 'link' },
+        { key: 'definido',  label: 'APROBADO',   w: 0.07, type: 'check' },
+        { key: 'comprado',  label: 'COMPRADO',   w: 0.07, type: 'check' },
+        { key: 'obs_cliente', label: 'OBSERVACIONES CLIENTE', w: 0.15, type: 'field' },
+      ]
+      const colW = COLS.map(c => Math.floor(usableW * c.w))
+
+      const ROW_H  = Math.round(18 * PT)
+      const HDR_H  = Math.round(7 * PT)
+      const THDR_H = Math.round(7 * PT)
+      const TITLE_H = Math.round(13 * PT)
+      const INSTR_H = Math.round(8 * PT)
+
+      // Pre-fetch imágenes
+      const imgEmbedCache = {}
+      for (const row of rows) {
+        if (row.foto && !imgEmbedCache[row.foto]) {
+          const b64 = await fetchImageBase64(row.foto)
+          if (b64) {
+            try {
+              const raw = b64.split(',')[1]
+              const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0))
+              const isPng = b64.startsWith('data:image/png')
+              imgEmbedCache[row.foto] = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes)
+            } catch {}
+          }
+        }
+      }
+
+      let pageNum = 0
+      let page, contentTop
+
+      const newPage = () => {
+        pageNum++
+        page = pdfDoc.addPage([PW, PH])
+
+        // Franja título
+        page.drawRectangle({ x: MG, y: PH - MG - TITLE_H, width: usableW, height: TITLE_H, color: rgb(0.10, 0.10, 0.18) })
+        page.drawText('LISTADO DE COMPRAS — REVISIÓN CLIENTE', {
+          x: MG + 6, y: PH - MG - TITLE_H + (TITLE_H - 9) / 2,
+          size: 9, font: fontBold, color: rgb(1, 1, 1),
+        })
+        page.drawText(proyNombre || '', {
+          x: MG + 6, y: PH - MG - TITLE_H + 3,
+          size: 6.5, font: fontReg, color: rgb(0.7, 0.7, 0.7),
+        })
+        page.drawText(`Pág. ${pageNum}`, {
+          x: PW - MG - 6, y: PH - MG - TITLE_H + (TITLE_H) / 2 - 2,
+          size: 7, font: fontReg, color: rgb(0.85, 0.85, 0.85),
+        })
+
+        // Instrucción al cliente (solo pág 1)
+        if (pageNum === 1) {
+          page.drawRectangle({ x: MG, y: PH - MG - TITLE_H - INSTR_H, width: usableW, height: INSTR_H, color: rgb(0.97, 0.97, 0.90) })
+          page.drawText('Por favor completá los campos "APROBADO", "COMPRADO" y "OBSERVACIONES CLIENTE" y devolvé este PDF.', {
+            x: MG + 5, y: PH - MG - TITLE_H - INSTR_H + (INSTR_H - 6) / 2,
+            size: 6, font: fontReg, color: rgb(0.30, 0.25, 0.05),
+          })
+          contentTop = PH - MG - TITLE_H - INSTR_H
+        } else {
+          contentTop = PH - MG - TITLE_H
+        }
+
+        // Header de tabla
+        const thdrY = contentTop - THDR_H
+        page.drawRectangle({ x: MG, y: thdrY, width: usableW, height: THDR_H, color: rgb(0.94, 0.94, 0.96) })
+        let hx = MG
+        COLS.forEach((col, ci) => {
+          page.drawText(col.label, { x: hx + 2, y: thdrY + 2, size: 5.5, font: fontBold, color: rgb(0.25, 0.25, 0.35) })
+          if (ci < COLS.length - 1) page.drawLine({ start: { x: hx + colW[ci], y: thdrY }, end: { x: hx + colW[ci], y: thdrY + THDR_H }, thickness: 0.3, color: rgb(0.8, 0.8, 0.8) })
+          hx += colW[ci]
+        })
+
+        return contentTop - THDR_H  // currentY = bottom of header row
+      }
+
+      let fieldIdx = 0
+      let y = newPage()
+
+      const clampText = (txt, maxW, sz, f) => {
+        const words = String(txt || '').split(' ')
+        let line = ''
+        const lines = []
+        for (const w of words) {
+          const test = line ? line + ' ' + w : w
+          if (f.widthOfTextAtSize(test, sz) > maxW - 4) {
+            if (line) lines.push(line)
+            line = w
+          } else { line = test }
+        }
+        if (line) lines.push(line)
+        return lines.slice(0, 2)
+      }
+
+      for (const row of rows) {
+        const isHdr = isComprasHeader(row)
+        const rowH  = isHdr ? HDR_H : ROW_H
+
+        if (y - rowH < MG) y = newPage()
+
+        const rowY = y - rowH  // bottom-left y of this row
+
+        // Fondo
+        if (isHdr) {
+          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.17, 0.17, 0.30) })
+        } else if (fieldIdx % 2 === 0) {
+          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.985, 0.985, 0.99) })
+        }
+        // Línea separadora
+        page.drawLine({ start: { x: MG, y: rowY }, end: { x: MG + usableW, y: rowY }, thickness: 0.2, color: rgb(0.85, 0.85, 0.85) })
+
+        let x = MG
+        COLS.forEach((col, ci) => {
+          const w  = colW[ci]
+          const raw = row[col.key] ?? ''
+
+          if (isHdr) {
+            if (col.key === 'item' || col.key === 'categoria') {
+              page.drawText(String(raw), { x: x + 2, y: rowY + (rowH - 6) / 2, size: 6.5, font: fontBold, color: rgb(1, 1, 1) })
+            }
+          } else if (col.type === 'imagen') {
+            const img = imgEmbedCache[raw]
+            if (img) {
+              const dim = img.scaleToFit(w - 2, rowH - 2)
+              page.drawImage(img, { x: x + 1 + (w - 2 - dim.width) / 2, y: rowY + 1 + (rowH - 2 - dim.height) / 2, width: dim.width, height: dim.height })
+            }
+          } else if (col.type === 'check') {
+            // Checkbox AcroForm field
+            const cbSize = Math.min(w - 6, rowH - 6)
+            const cbX = x + (w - cbSize) / 2
+            const cbY = rowY + (rowH - cbSize) / 2
+            const fieldName = `${col.key}_${fieldIdx}`
+            try {
+              const cb = form.createCheckBox(fieldName)
+              cb.addToPage(page, { x: cbX, y: cbY, width: cbSize, height: cbSize })
+              if (raw) cb.check()
+            } catch {}
+          } else if (col.type === 'field') {
+            // Textarea editable
+            const fieldName = `obs_cliente_${fieldIdx}`
+            try {
+              const tf = form.createTextField(fieldName)
+              tf.addToPage(page, { x: x + 1, y: rowY + 1, width: w - 2, height: rowH - 2 })
+              tf.enableMultiline()
+              tf.setFontSize(6)
+            } catch {}
+          } else if (col.type === 'link') {
+            if (raw) {
+              page.drawText('VER', { x: x + (w - fontReg.widthOfTextAtSize('VER', 6)) / 2, y: rowY + (rowH - 6) / 2, size: 6, font: fontBold, color: rgb(0.14, 0.40, 0.92) })
+              const annots = page.node.lookupMaybe(pdfDoc.context.obj('Annots'))
+              // Add URI link annotation
+              const link = pdfDoc.context.obj({
+                Type: 'Annot', Subtype: 'Link',
+                Rect: [x, rowY, x + w, rowY + rowH],
+                Border: [0, 0, 0],
+                A: { Type: 'Action', S: 'URI', URI: pdfDoc.context.obj(raw) },
+              })
+              const ref = pdfDoc.context.register(link)
+              page.node.set(pdfDoc.context.obj('Annots'), pdfDoc.context.obj([ref]))
+            }
+          } else {
+            // Texto estático
+            const lines = clampText(raw, w, 6, fontReg)
+            const lineH = 7.5
+            const blockH = lines.length * lineH
+            const startY = rowY + (rowH - blockH) / 2 + lineH * 0.3
+            lines.forEach((l, li) => {
+              try { page.drawText(l, { x: x + 2, y: startY + (lines.length - 1 - li) * lineH, size: 6, font: fontReg, color: rgb(0.15, 0.15, 0.15) }) } catch {}
+            })
+          }
+
+          if (ci < COLS.length - 1) page.drawLine({ start: { x: x + w, y: rowY }, end: { x: x + w, y: rowY + rowH }, thickness: 0.2, color: rgb(0.85, 0.85, 0.85) })
+          x += w
+        })
+
+        if (!isHdr) fieldIdx++
+        y -= rowH
+      }
+
+      const pdfBytes = await pdfDoc.save()
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href = url
+      a.download = `Compras_Rellenable_${(proyNombre || 'proyecto').replace(/[^\w\s]/g, '').trim()}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) { console.error('[PDF Rellenable]', e) }
+    finally { setExportandoRellenable(false) }
+  }
+
   const save = useCallback(async (r) => {
     setSaving(true)
     await onSave({ rows: r })
@@ -1509,10 +1726,16 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
           </>
         )}
         {!isEmpty && !editMode && (
-          <button onClick={exportarPDF} disabled={exportando}
-            style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: exportando ? 0.7 : 1 }}>
-            {exportando ? 'Generando PDF…' : '↓ Exportar PDF'}
-          </button>
+          <>
+            <button onClick={exportarPDF} disabled={exportando}
+              style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: exportando ? 0.7 : 1 }}>
+              {exportando ? 'Generando PDF…' : '↓ Exportar PDF'}
+            </button>
+            <button onClick={exportarPDFRellenable} disabled={exportandoRellenable}
+              style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid #2563EB`, background: exportandoRellenable ? '#EFF6FF' : '#EFF6FF', color: '#2563EB', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: exportandoRellenable ? 0.7 : 1 }}>
+              {exportandoRellenable ? 'Generando…' : '↓ PDF Rellenable'}
+            </button>
+          </>
         )}
         {!isEmpty && (
           <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 4 }}>
