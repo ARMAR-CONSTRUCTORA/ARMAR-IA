@@ -262,9 +262,11 @@ function StatsPanel({ tareas, avanceGeneral, informes, certificados }) {
   )
 }
 
-function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, onAddEtapa, ppd, onZoomChange, certificados, hitos = [], hiddenCols = EMPTY_SET }) {
+function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAddSubtarea, onAddEtapa, ppd, onZoomChange, certificados, hitos = [], hiddenCols = EMPTY_SET, onReorderTareas = null }) {
   const scrollRef = useRef()
   const [expandedEtapas, setExpandedEtapas] = useState(new Set(tareas.filter(t => t.parentId === null).map(t => t.id)))
+  const [colNombreW, setColNombreW] = useState(160)
+  const [dragState, setDragState] = useState(null) // { dragId, overId, overPos }
 
   const etapas = tareas.filter(t => t.parentId === null)
   if (!etapas.length) return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>No hay etapas en este cronograma.</div>
@@ -274,7 +276,7 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
 
   const hitosValidos = (hitos || []).filter(h => h.fechaPrevista).sort((a, b) => (a.fechaPrevista || '').localeCompare(b.fechaPrevista || ''))
 
-  const COL_NOMBRE   = 160
+  const COL_NOMBRE   = colNombreW
   const COL_INICIO   = 65
   const COL_FIN      = 65
   const COL_DIAS     = 68
@@ -342,6 +344,51 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     })
   })
 
+  const startResize = (e) => {
+    e.preventDefault()
+    const startX = e.clientX, startW = colNombreW
+    const onMove = ev => setColNombreW(Math.max(120, Math.min(500, startW + ev.clientX - startX)))
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
+
+  const handleDrop = (e, targetTarea, pos) => {
+    e.preventDefault()
+    if (!dragState || !onReorderTareas) return
+    const srcId = dragState.dragId
+    const src = tareas.find(t => t.id === srcId)
+    const target = targetTarea
+    setDragState(null)
+    if (!src || src.id === target.id) return
+    const srcIsEtapa = src.parentId === null
+    const tgtIsEtapa = target.parentId === null
+    const etapas = tareas.filter(t => t.parentId === null)
+    if (srcIsEtapa && tgtIsEtapa) {
+      const srcIdx = etapas.findIndex(t => t.id === srcId)
+      let tgtIdx = etapas.findIndex(t => t.id === target.id)
+      const newEtapas = [...etapas]
+      newEtapas.splice(srcIdx, 1)
+      if (pos === 'after') tgtIdx = etapas.findIndex(t => t.id === target.id)
+      const insertAt = pos === 'before' ? Math.max(0, etapas.findIndex(t => t.id === target.id) - (srcIdx < etapas.findIndex(t => t.id === target.id) ? 1 : 0)) : etapas.findIndex(t => t.id === target.id) - (srcIdx < etapas.findIndex(t => t.id === target.id) ? 0 : 0)
+      // simpler: remove src, find target in newEtapas, insert
+      const newE2 = etapas.filter(t => t.id !== srcId)
+      const tIdx = newE2.findIndex(t => t.id === target.id)
+      newE2.splice(pos === 'before' ? tIdx : tIdx + 1, 0, src)
+      const newTareas = []
+      newE2.forEach(et => { newTareas.push(et); tareas.filter(s => s.parentId === et.id).forEach(s => newTareas.push(s)) })
+      onReorderTareas(newTareas)
+    } else if (!srcIsEtapa && !tgtIsEtapa && src.parentId === target.parentId) {
+      const subs = tareas.filter(t => t.parentId === src.parentId)
+      const newSubs = subs.filter(t => t.id !== srcId)
+      const tIdx = newSubs.findIndex(t => t.id === target.id)
+      newSubs.splice(pos === 'before' ? tIdx : tIdx + 1, 0, src)
+      const newTareas = []
+      etapas.forEach(et => { newTareas.push(et); (et.id === src.parentId ? newSubs : tareas.filter(s => s.parentId === et.id)).forEach(s => newTareas.push(s)) })
+      onReorderTareas(newTareas)
+    }
+  }
+
   const renderRow = (tarea, isSubtarea = false) => {
     const indent      = isSubtarea ? 20 : 0
     const avance      = tarea.parentId === null ? calcAvanceEtapa(tareas, tarea.id) : tarea.avanceActual
@@ -366,12 +413,26 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     const pagadoAcum  = calcPagadoAcumulado(tarea.id, certificados)
     const saldo       = subtotal - pagadoAcum
 
+    const isDragging = dragState?.dragId === tarea.id
+    const isOver = dragState?.overId === tarea.id
+    const overPos = isOver ? dragState.overPos : null
+    const canDrag = structuralMode && onReorderTareas
+
     return (
-      <div key={tarea.id} style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid var(--gray-200)' }}>
+      <div key={tarea.id}
+        draggable={canDrag}
+        onDragStart={canDrag ? e => { e.dataTransfer.effectAllowed = 'move'; setDragState({ dragId: tarea.id, overId: null, overPos: null }) } : undefined}
+        onDragOver={canDrag ? e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const rect = e.currentTarget.getBoundingClientRect(); setDragState(prev => prev?.dragId ? { ...prev, overId: tarea.id, overPos: (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after' } : prev) } : undefined}
+        onDrop={canDrag ? e => handleDrop(e, tarea, isOver ? overPos : 'after') : undefined}
+        onDragEnd={canDrag ? () => setDragState(null) : undefined}
+        style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid var(--gray-200)', opacity: isDragging ? 0.45 : 1, outline: isOver ? `2px solid ${overPos === 'before' ? orange : '#2563EB'}` : 'none', outlineOffset: -2, position: 'relative' }}>
         <div onClick={() => onClickTarea(tarea)}
-          style={{ ...cellStyle(COL_NOMBRE, true), background: isSubtarea ? 'white' : '#FAFAFA', display: 'flex', alignItems: 'center', paddingLeft: 10 + indent, paddingRight: 8, gap: 4, borderRight: '2px solid var(--gray-200)', cursor: 'pointer' }}
+          style={{ ...cellStyle(COL_NOMBRE, true), background: isSubtarea ? 'white' : '#FAFAFA', display: 'flex', alignItems: 'center', paddingLeft: canDrag ? 4 + indent : 10 + indent, paddingRight: 8, gap: 4, borderRight: '2px solid var(--gray-200)', cursor: 'pointer' }}
           onMouseEnter={e => e.currentTarget.style.background = '#FFF7ED'}
           onMouseLeave={e => e.currentTarget.style.background = isSubtarea ? 'white' : '#FAFAFA'}>
+          {canDrag && (
+            <span title="Arrastrar para reordenar" style={{ cursor: 'grab', color: 'var(--gray-300)', fontSize: 12, flexShrink: 0, paddingRight: 2, userSelect: 'none' }}>⠿</span>
+          )}
           {!isSubtarea && (
             <button onClick={ev => { ev.stopPropagation(); toggleExpand(tarea.id) }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', fontSize: 10, padding: '2px', lineHeight: 1, flexShrink: 0, transition: 'transform 0.15s', transform: expandedEtapas.has(tarea.id) ? 'rotate(90deg)' : 'rotate(0deg)' }}>
@@ -513,17 +574,29 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
       <div data-gantt-content style={{ minWidth: TABLE_W + timelineW + (structuralMode ? 32 : 0) }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 10 }}>
           <div style={{ display: 'flex', height: HEADER_H, background: '#F3F4F6', borderBottom: effectivePpd >= 5.5 ? '1px solid var(--gray-200)' : '2px solid var(--gray-200)' }}>
+            {/* Sticky name column with resize handle */}
+            <div style={{
+              ...cellStyle(COL_NOMBRE, true),
+              display: 'flex', alignItems: 'center', paddingLeft: 14,
+              fontSize: 9, fontWeight: 700, color: 'var(--gray-500)',
+              textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F3F4F6',
+              borderRight: '2px solid var(--gray-200)', position: 'relative',
+            }}>
+              Etapa / Tarea
+              <div onMouseDown={startResize} title="Arrastrar para redimensionar"
+                style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 6, cursor: 'col-resize', zIndex: 10 }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,99,235,0.18)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'} />
+            </div>
             {[
-              { label: 'Etapa / Tarea', w: COL_NOMBRE, sticky: true },
-              { label: 'Inicio',        w: COL_INICIO },
+              { label: 'Inicio', w: COL_INICIO },
               ...visibleCols.map(c => ({ label: c.label, w: COL_W[c.key] })),
             ].map(col => (
               <div key={col.label} style={{
-                ...cellStyle(col.w, col.sticky),
-                display: 'flex', alignItems: 'center', paddingLeft: col.sticky ? 14 : 5,
+                ...cellStyle(col.w, false),
+                display: 'flex', alignItems: 'center', paddingLeft: 5,
                 fontSize: 9, fontWeight: 700, color: 'var(--gray-500)',
                 textTransform: 'uppercase', letterSpacing: '0.06em', background: '#F3F4F6',
-                ...(col.sticky ? { borderRight: '2px solid var(--gray-200)' } : {}),
               }}>
                 {col.label}
               </div>
@@ -1663,6 +1736,10 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
     setCascadeData(null)
   }
 
+  const handleReorderTareas = (reorderedTareas) => {
+    onSaveCronograma(project.id, cronograma.id, { tareas: reorderedTareas })
+  }
+
   const handleDeleteTarea = (id) => {
     const tareasRestantes = tareas.filter(t => t.id !== id && t.parentId !== id)
     const tareasFinales = tareasRestantes.map(t =>
@@ -2309,6 +2386,7 @@ export default function CronogramaTab({ project, cronogramas, teamMembers, onCre
             certificados={certificados}
             hitos={obraHitos}
             hiddenCols={hiddenCols}
+            onReorderTareas={isEditor ? handleReorderTareas : null}
           />
         </div>
         <StatsPanel tareas={tareasNorm} avanceGeneral={avanceGeneral} informes={informes} certificados={certificados} />
