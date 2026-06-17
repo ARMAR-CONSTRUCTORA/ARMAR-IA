@@ -1214,9 +1214,9 @@ function isComprasHeader(row) {
 
 function calcTot(row) {
   const p = parseFloat(String(row.precioUn).replace(/\./g,'').replace(',','.')) || 0
-  const c = parseFloat(String(row.cant).replace(',','.')) || 0
-  if (!p || !c) return ''
-  return '$' + Math.round(p * c).toLocaleString('es-AR')
+  const q = parseFloat(String(row.cajasUn).replace(',','.')) || 0
+  if (!p || !q) return ''
+  return '$' + Math.round(p * q).toLocaleString('es-AR')
 }
 
 const PDF_COLS = [
@@ -1264,8 +1264,18 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const [fotoModal,   setFotoModal]   = useState(null)
   const [exportando,          setExportando]          = useState(false)
   const [exportandoRellenable, setExportandoRellenable] = useState(false)
+  const [colWidths, setColWidths] = useState(() => Object.fromEntries(COMPRAS_COLS.map(c => [c.key, c.w])))
   const fileRefs = useRef({})
   const editing = isEditor && editMode
+
+  const startColResize = (e, key) => {
+    e.preventDefault()
+    const startX = e.clientX, startW = colWidths[key]
+    const onMove = ev => setColWidths(prev => ({ ...prev, [key]: Math.max(30, startW + ev.clientX - startX) }))
+    const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   const exportarPDF = async () => {
     setExportando(true)
@@ -1730,8 +1740,12 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             <thead>
               <tr style={{ background: '#F3F4F6' }}>
                 {COMPRAS_COLS.map(col => (
-                  <th key={col.key} style={{ padding: '7px 8px', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, fontWeight: 700, color: dark, whiteSpace: 'nowrap', minWidth: col.w, width: col.w, textAlign: col.type === 'number' || col.type === 'precio' || col.type === 'calc' ? 'right' : 'left' }}>
+                  <th key={col.key} style={{ padding: '7px 8px', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, fontWeight: 700, color: dark, whiteSpace: 'nowrap', minWidth: 30, width: colWidths[col.key], textAlign: col.type === 'number' || col.type === 'precio' || col.type === 'calc' ? 'right' : 'left', position: 'relative', userSelect: 'none' }}>
                     {col.label}
+                    <div onMouseDown={e => startColResize(e, col.key)}
+                      style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize', zIndex: 2 }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,99,235,0.2)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'} />
                   </th>
                 ))}
                 {editing && <th style={{ width: 28, borderBottom: `1px solid ${border}` }} />}
@@ -1748,7 +1762,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                     onMouseLeave={e => { e.currentTarget.style.background = isHeader ? '#1A1A2E' : comprado ? '#F0FDF4' : 'white' }}>
                     {COMPRAS_COLS.map(col => {
                       const val = row[col.key] ?? ''
-                      const cellStyle = { padding: '4px 6px', borderRight: `1px solid ${isHeader ? '#333' : border}`, verticalAlign: 'middle', minWidth: col.w, width: col.w }
+                      const cellStyle = { padding: '4px 6px', borderRight: `1px solid ${isHeader ? '#333' : border}`, verticalAlign: 'middle', minWidth: 30, width: colWidths[col.key] }
 
                       if (isHeader && col.key !== 'item' && col.key !== 'categoria') {
                         return <td key={col.key} style={cellStyle} />
