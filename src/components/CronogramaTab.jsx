@@ -266,7 +266,8 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
   const scrollRef = useRef()
   const [expandedEtapas, setExpandedEtapas] = useState(new Set(tareas.filter(t => t.parentId === null).map(t => t.id)))
   const [colNombreW, setColNombreW] = useState(160)
-  const [dragState, setDragState] = useState(null) // { dragId, overId, overPos }
+  const dragRef = useRef(null)         // acceso sincrónico: { dragId, overId, overPos }
+  const [dragOver, setDragOver] = useState(null) // { overId, overPos } — solo visual
 
   const etapas = tareas.filter(t => t.parentId === null)
   if (!etapas.length) return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>No hay etapas en este cronograma.</div>
@@ -353,35 +354,30 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     window.addEventListener('mouseup', onUp)
   }
 
-  const handleDrop = (e, targetTarea, pos) => {
+  const handleDrop = (e, targetTarea) => {
     e.preventDefault()
-    if (!dragState || !onReorderTareas) return
-    const srcId = dragState.dragId
-    const src = tareas.find(t => t.id === srcId)
-    const target = targetTarea
-    setDragState(null)
-    if (!src || src.id === target.id) return
-    const srcIsEtapa = src.parentId === null
-    const tgtIsEtapa = target.parentId === null
+    const d = dragRef.current
+    setDragOver(null)
+    dragRef.current = null
+    if (!d || !onReorderTareas) return
+    const { dragId, overPos: pos } = d
+    if (dragId === targetTarea.id) return
+    const src = tareas.find(t => t.id === dragId)
+    if (!src) return
     const etapas = tareas.filter(t => t.parentId === null)
-    if (srcIsEtapa && tgtIsEtapa) {
-      const srcIdx = etapas.findIndex(t => t.id === srcId)
-      let tgtIdx = etapas.findIndex(t => t.id === target.id)
-      const newEtapas = [...etapas]
-      newEtapas.splice(srcIdx, 1)
-      if (pos === 'after') tgtIdx = etapas.findIndex(t => t.id === target.id)
-      const insertAt = pos === 'before' ? Math.max(0, etapas.findIndex(t => t.id === target.id) - (srcIdx < etapas.findIndex(t => t.id === target.id) ? 1 : 0)) : etapas.findIndex(t => t.id === target.id) - (srcIdx < etapas.findIndex(t => t.id === target.id) ? 0 : 0)
-      // simpler: remove src, find target in newEtapas, insert
-      const newE2 = etapas.filter(t => t.id !== srcId)
-      const tIdx = newE2.findIndex(t => t.id === target.id)
-      newE2.splice(pos === 'before' ? tIdx : tIdx + 1, 0, src)
+    if (src.parentId === null && targetTarea.parentId === null) {
+      const newE = etapas.filter(t => t.id !== dragId)
+      const tIdx = newE.findIndex(t => t.id === targetTarea.id)
+      if (tIdx < 0) return
+      newE.splice(pos === 'before' ? tIdx : tIdx + 1, 0, src)
       const newTareas = []
-      newE2.forEach(et => { newTareas.push(et); tareas.filter(s => s.parentId === et.id).forEach(s => newTareas.push(s)) })
+      newE.forEach(et => { newTareas.push(et); tareas.filter(s => s.parentId === et.id).forEach(s => newTareas.push(s)) })
       onReorderTareas(newTareas)
-    } else if (!srcIsEtapa && !tgtIsEtapa && src.parentId === target.parentId) {
+    } else if (src.parentId !== null && targetTarea.parentId !== null && src.parentId === targetTarea.parentId) {
       const subs = tareas.filter(t => t.parentId === src.parentId)
-      const newSubs = subs.filter(t => t.id !== srcId)
-      const tIdx = newSubs.findIndex(t => t.id === target.id)
+      const newSubs = subs.filter(t => t.id !== dragId)
+      const tIdx = newSubs.findIndex(t => t.id === targetTarea.id)
+      if (tIdx < 0) return
       newSubs.splice(pos === 'before' ? tIdx : tIdx + 1, 0, src)
       const newTareas = []
       etapas.forEach(et => { newTareas.push(et); (et.id === src.parentId ? newSubs : tareas.filter(s => s.parentId === et.id)).forEach(s => newTareas.push(s)) })
@@ -413,18 +409,32 @@ function TablaGantt({ tareas, structuralMode, onClickTarea, onDeleteTarea, onAdd
     const pagadoAcum  = calcPagadoAcumulado(tarea.id, certificados)
     const saldo       = subtotal - pagadoAcum
 
-    const isDragging = dragState?.dragId === tarea.id
-    const isOver = dragState?.overId === tarea.id
-    const overPos = isOver ? dragState.overPos : null
-    const canDrag = structuralMode && onReorderTareas
+    const isDragging = dragRef.current?.dragId === tarea.id
+    const isOver = dragOver?.overId === tarea.id
+    const overPos = isOver ? dragOver.overPos : null
+    const canDrag = !!(structuralMode && onReorderTareas)
 
     return (
       <div key={tarea.id}
         draggable={canDrag}
-        onDragStart={canDrag ? e => { e.dataTransfer.effectAllowed = 'move'; setDragState({ dragId: tarea.id, overId: null, overPos: null }) } : undefined}
-        onDragOver={canDrag ? e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; const rect = e.currentTarget.getBoundingClientRect(); setDragState(prev => prev?.dragId ? { ...prev, overId: tarea.id, overPos: (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after' } : prev) } : undefined}
-        onDrop={canDrag ? e => handleDrop(e, tarea, isOver ? overPos : 'after') : undefined}
-        onDragEnd={canDrag ? () => setDragState(null) : undefined}
+        onDragStart={canDrag ? e => {
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', String(tarea.id))
+          dragRef.current = { dragId: tarea.id, overId: null, overPos: 'after' }
+        } : undefined}
+        onDragOver={canDrag ? e => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = 'move'
+          const rect = e.currentTarget.getBoundingClientRect()
+          const pos = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after'
+          if (dragRef.current) dragRef.current = { ...dragRef.current, overId: tarea.id, overPos: pos }
+          setDragOver({ overId: tarea.id, overPos: pos })
+        } : undefined}
+        onDragLeave={canDrag ? e => {
+          if (!e.currentTarget.contains(e.relatedTarget)) setDragOver(null)
+        } : undefined}
+        onDrop={canDrag ? e => handleDrop(e, tarea) : undefined}
+        onDragEnd={canDrag ? () => { dragRef.current = null; setDragOver(null) } : undefined}
         style={{ display: 'flex', height: ROW_H, borderBottom: '1px solid var(--gray-200)', opacity: isDragging ? 0.45 : 1, outline: isOver ? `2px solid ${overPos === 'before' ? orange : '#2563EB'}` : 'none', outlineOffset: -2, position: 'relative' }}>
         <div onClick={() => onClickTarea(tarea)}
           style={{ ...cellStyle(COL_NOMBRE, true), background: isSubtarea ? 'white' : '#FAFAFA', display: 'flex', alignItems: 'center', paddingLeft: canDrag ? 4 + indent : 10 + indent, paddingRight: 8, gap: 4, borderRight: '2px solid var(--gray-200)', cursor: 'pointer' }}
