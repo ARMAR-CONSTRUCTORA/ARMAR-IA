@@ -1448,119 +1448,109 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const exportarPDFRellenable = async () => {
     setExportandoRellenable(true)
     try {
-      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib')
+      const { PDFDocument, rgb, StandardFonts, PDFName, PDFString, PDFArray, PDFNumber, PDFDict } = await import('pdf-lib')
 
-      const pdfDoc = await PDFDocument.create()
-      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-      const fontReg  = await pdfDoc.embedFont(StandardFonts.Helvetica)
-      const form     = pdfDoc.getForm()
+      // Elimina caracteres fuera de WinAnsiEncoding (Helvetica estándar)
+      const safe = (str) => String(str || '').replace(/[^\x20-\xFF]/g, '').trim()
 
-      // A3 landscape en puntos (1 mm = 2.8346 pt)
+      const pdfDoc  = await PDFDocument.create()
+      const fontB   = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+      const fontR   = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      const form    = pdfDoc.getForm()
+
+      // A3 landscape (420x297mm) en puntos (1mm = 2.8346pt)
       const PT = 2.8346
-      const PW = Math.round(420 * PT), PH = Math.round(297 * PT)
-      const MG = Math.round(10 * PT)
+      const PW = 1190, PH = 842   // A3 landscape redondeado
+      const MG = 28               // ~10mm
       const usableW = PW - MG * 2
 
-      // Columnas versión cliente — sin precios
       const COLS = [
-        { key: 'item',      label: 'ITEM',       w: 0.04, type: 'static' },
-        { key: 'foto',      label: 'FOTO',       w: 0.09, type: 'imagen' },
-        { key: 'ubicacion', label: 'UBICACIÓN',  w: 0.12, type: 'static' },
-        { key: 'categoria', label: 'CATEGORÍA',  w: 0.10, type: 'static' },
-        { key: 'marca',     label: 'MARCA',      w: 0.08, type: 'static' },
-        { key: 'modelo',    label: 'MODELO',     w: 0.18, type: 'static' },
-        { key: 'cant',      label: 'CANT.',      w: 0.05, type: 'static' },
-        { key: 'link',      label: 'LINK',       w: 0.05, type: 'link' },
-        { key: 'definido',  label: 'APROBADO',   w: 0.07, type: 'check' },
-        { key: 'comprado',  label: 'COMPRADO',   w: 0.07, type: 'check' },
-        { key: 'obs_cliente', label: 'OBSERVACIONES CLIENTE', w: 0.15, type: 'field' },
+        { key: 'item',        label: 'ITEM',       fr: 0.04 },
+        { key: 'foto',        label: 'FOTO',       fr: 0.09, tipo: 'imagen' },
+        { key: 'ubicacion',   label: 'UBICACION',  fr: 0.12 },
+        { key: 'categoria',   label: 'CATEGORIA',  fr: 0.10 },
+        { key: 'marca',       label: 'MARCA',      fr: 0.08 },
+        { key: 'modelo',      label: 'MODELO',     fr: 0.17 },
+        { key: 'cant',        label: 'CANT',       fr: 0.05 },
+        { key: 'definido',    label: 'APROBADO',   fr: 0.07, tipo: 'check' },
+        { key: 'comprado',    label: 'COMPRADO',   fr: 0.07, tipo: 'check' },
+        { key: 'obs_cliente', label: 'OBS. CLIENTE', fr: 0.21, tipo: 'field' },
       ]
-      const colW = COLS.map(c => Math.floor(usableW * c.w))
+      const colW = COLS.map(c => Math.floor(usableW * c.fr))
 
-      const ROW_H  = Math.round(18 * PT)
-      const HDR_H  = Math.round(7 * PT)
-      const THDR_H = Math.round(7 * PT)
-      const TITLE_H = Math.round(13 * PT)
-      const INSTR_H = Math.round(8 * PT)
+      const TITLE_H = 32
+      const INSTR_H = 20
+      const THDR_H  = 18
+      const ROW_H   = 46
+      const HDR_H   = 18
 
-      // Pre-fetch imágenes
-      const imgEmbedCache = {}
+      // Pre-embed imágenes
+      const imgCache = {}
       for (const row of rows) {
-        if (row.foto && !imgEmbedCache[row.foto]) {
-          const b64 = await fetchImageBase64(row.foto)
-          if (b64) {
-            try {
-              const raw = b64.split(',')[1]
-              const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0))
-              const isPng = b64.startsWith('data:image/png')
-              imgEmbedCache[row.foto] = isPng ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes)
-            } catch {}
-          }
+        if (row.foto && !imgCache[row.foto]) {
+          try {
+            const b64 = await fetchImageBase64(row.foto)
+            if (!b64) continue
+            const data  = b64.split(',')[1]
+            const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
+            imgCache[row.foto] = b64.startsWith('data:image/png')
+              ? await pdfDoc.embedPng(bytes)
+              : await pdfDoc.embedJpg(bytes)
+          } catch {}
         }
       }
 
-      let pageNum = 0
-      let page, contentTop
+      let pageNum = 0, page, bodyTop
 
-      const newPage = () => {
+      const addPage = () => {
         pageNum++
         page = pdfDoc.addPage([PW, PH])
 
-        // Franja título
+        // Título
         page.drawRectangle({ x: MG, y: PH - MG - TITLE_H, width: usableW, height: TITLE_H, color: rgb(0.10, 0.10, 0.18) })
-        page.drawText('LISTADO DE COMPRAS — REVISIÓN CLIENTE', {
-          x: MG + 6, y: PH - MG - TITLE_H + (TITLE_H - 9) / 2,
-          size: 9, font: fontBold, color: rgb(1, 1, 1),
-        })
-        page.drawText(proyNombre || '', {
-          x: MG + 6, y: PH - MG - TITLE_H + 3,
-          size: 6.5, font: fontReg, color: rgb(0.7, 0.7, 0.7),
-        })
-        page.drawText(`Pág. ${pageNum}`, {
-          x: PW - MG - 6, y: PH - MG - TITLE_H + (TITLE_H) / 2 - 2,
-          size: 7, font: fontReg, color: rgb(0.85, 0.85, 0.85),
-        })
+        try { page.drawText('LISTADO DE COMPRAS - REVISION CLIENTE', { x: MG + 8, y: PH - MG - TITLE_H + 12, size: 11, font: fontB, color: rgb(1,1,1) }) } catch {}
+        try { page.drawText(safe(proyNombre), { x: MG + 8, y: PH - MG - TITLE_H + 4, size: 7, font: fontR, color: rgb(0.7,0.7,0.7) }) } catch {}
+        try { page.drawText(`Pag. ${pageNum}`, { x: PW - MG - 8, y: PH - MG - TITLE_H + 12, size: 7, font: fontR, color: rgb(0.75,0.75,0.75) }) } catch {}
 
-        // Instrucción al cliente (solo pág 1)
+        let nextTop = PH - MG - TITLE_H
+
+        // Instrucción solo pág 1
         if (pageNum === 1) {
-          page.drawRectangle({ x: MG, y: PH - MG - TITLE_H - INSTR_H, width: usableW, height: INSTR_H, color: rgb(0.97, 0.97, 0.90) })
-          page.drawText('Por favor completá los campos "APROBADO", "COMPRADO" y "OBSERVACIONES CLIENTE" y devolvé este PDF.', {
-            x: MG + 5, y: PH - MG - TITLE_H - INSTR_H + (INSTR_H - 6) / 2,
-            size: 6, font: fontReg, color: rgb(0.30, 0.25, 0.05),
-          })
-          contentTop = PH - MG - TITLE_H - INSTR_H
-        } else {
-          contentTop = PH - MG - TITLE_H
+          page.drawRectangle({ x: MG, y: nextTop - INSTR_H, width: usableW, height: INSTR_H, color: rgb(0.97, 0.97, 0.86) })
+          try { page.drawText('Por favor complete los campos APROBADO, COMPRADO y OBS. CLIENTE y reenvie este PDF.', { x: MG + 6, y: nextTop - INSTR_H + 6, size: 7, font: fontR, color: rgb(0.35,0.28,0.05) }) } catch {}
+          nextTop -= INSTR_H
         }
 
-        // Header de tabla
-        const thdrY = contentTop - THDR_H
-        page.drawRectangle({ x: MG, y: thdrY, width: usableW, height: THDR_H, color: rgb(0.94, 0.94, 0.96) })
+        // Header columnas
+        page.drawRectangle({ x: MG, y: nextTop - THDR_H, width: usableW, height: THDR_H, color: rgb(0.92, 0.92, 0.95) })
         let hx = MG
         COLS.forEach((col, ci) => {
-          page.drawText(col.label, { x: hx + 2, y: thdrY + 2, size: 5.5, font: fontBold, color: rgb(0.25, 0.25, 0.35) })
-          if (ci < COLS.length - 1) page.drawLine({ start: { x: hx + colW[ci], y: thdrY }, end: { x: hx + colW[ci], y: thdrY + THDR_H }, thickness: 0.3, color: rgb(0.8, 0.8, 0.8) })
+          try { page.drawText(col.label, { x: hx + 3, y: nextTop - THDR_H + 5, size: 6, font: fontB, color: rgb(0.2, 0.2, 0.3) }) } catch {}
+          if (ci < COLS.length - 1) page.drawLine({ start: { x: hx + colW[ci], y: nextTop - THDR_H }, end: { x: hx + colW[ci], y: nextTop }, thickness: 0.4, color: rgb(0.75,0.75,0.8) })
           hx += colW[ci]
         })
 
-        return contentTop - THDR_H  // currentY = bottom of header row
+        bodyTop = nextTop - THDR_H
+        return bodyTop  // y del borde inferior del header = tope de filas
       }
 
       let fieldIdx = 0
-      let y = newPage()
+      let y = addPage()
 
-      const clampText = (txt, maxW, sz, f) => {
-        const words = String(txt || '').split(' ')
-        let line = ''
+      const drawTextSafe = (txt, opts) => { try { page.drawText(safe(txt), opts) } catch {} }
+
+      const wrapText = (txt, maxW, sz, f) => {
+        const words = safe(txt).split(' ').filter(Boolean)
         const lines = []
+        let cur = ''
         for (const w of words) {
-          const test = line ? line + ' ' + w : w
-          if (f.widthOfTextAtSize(test, sz) > maxW - 4) {
-            if (line) lines.push(line)
-            line = w
-          } else { line = test }
+          const test = cur ? cur + ' ' + w : w
+          try {
+            if (f.widthOfTextAtSize(test, sz) > maxW - 6) { if (cur) lines.push(cur); cur = w }
+            else cur = test
+          } catch { cur = test }
         }
-        if (line) lines.push(line)
+        if (cur) lines.push(cur)
         return lines.slice(0, 2)
       }
 
@@ -1568,80 +1558,62 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
         const isHdr = isComprasHeader(row)
         const rowH  = isHdr ? HDR_H : ROW_H
 
-        if (y - rowH < MG) y = newPage()
+        if (y - rowH < MG) y = addPage()
+        const rowY = y - rowH
 
-        const rowY = y - rowH  // bottom-left y of this row
-
-        // Fondo
+        // Fondo fila
         if (isHdr) {
           page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.17, 0.17, 0.30) })
         } else if (fieldIdx % 2 === 0) {
-          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.985, 0.985, 0.99) })
+          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.975, 0.975, 0.99) })
         }
-        // Línea separadora
-        page.drawLine({ start: { x: MG, y: rowY }, end: { x: MG + usableW, y: rowY }, thickness: 0.2, color: rgb(0.85, 0.85, 0.85) })
+        page.drawLine({ start: { x: MG, y: rowY }, end: { x: MG + usableW, y: rowY }, thickness: 0.3, color: rgb(0.82, 0.82, 0.85) })
 
         let x = MG
         COLS.forEach((col, ci) => {
-          const w  = colW[ci]
-          const raw = row[col.key] ?? ''
+          const w   = colW[ci]
+          const val = row[col.key] ?? ''
 
           if (isHdr) {
             if (col.key === 'item' || col.key === 'categoria') {
-              page.drawText(String(raw), { x: x + 2, y: rowY + (rowH - 6) / 2, size: 6.5, font: fontBold, color: rgb(1, 1, 1) })
+              drawTextSafe(val, { x: x + 3, y: rowY + (rowH - 7) / 2, size: 7, font: fontB, color: rgb(1,1,1) })
             }
-          } else if (col.type === 'imagen') {
-            const img = imgEmbedCache[raw]
+          } else if (col.tipo === 'imagen') {
+            const img = imgCache[val]
             if (img) {
-              const dim = img.scaleToFit(w - 2, rowH - 2)
-              page.drawImage(img, { x: x + 1 + (w - 2 - dim.width) / 2, y: rowY + 1 + (rowH - 2 - dim.height) / 2, width: dim.width, height: dim.height })
+              try {
+                const dim = img.scaleToFit(w - 4, rowH - 4)
+                page.drawImage(img, { x: x + 2 + (w - 4 - dim.width) / 2, y: rowY + 2 + (rowH - 4 - dim.height) / 2, width: dim.width, height: dim.height })
+              } catch {}
             }
-          } else if (col.type === 'check') {
-            // Checkbox AcroForm field
-            const cbSize = Math.min(w - 6, rowH - 6)
-            const cbX = x + (w - cbSize) / 2
-            const cbY = rowY + (rowH - cbSize) / 2
-            const fieldName = `${col.key}_${fieldIdx}`
+          } else if (col.tipo === 'check') {
+            const sz  = Math.min(w - 8, rowH - 8, 18)
+            const cbX = Math.round(x + (w - sz) / 2)
+            const cbY = Math.round(rowY + (rowH - sz) / 2)
             try {
-              const cb = form.createCheckBox(fieldName)
-              cb.addToPage(page, { x: cbX, y: cbY, width: cbSize, height: cbSize })
-              if (raw) cb.check()
+              const cb = form.createCheckBox(`${col.key}_${fieldIdx}`)
+              cb.addToPage(page, { x: cbX, y: cbY, width: sz, height: sz })
+              if (val) cb.check()
             } catch {}
-          } else if (col.type === 'field') {
-            // Textarea editable
-            const fieldName = `obs_cliente_${fieldIdx}`
+          } else if (col.tipo === 'field') {
             try {
-              const tf = form.createTextField(fieldName)
-              tf.addToPage(page, { x: x + 1, y: rowY + 1, width: w - 2, height: rowH - 2 })
+              const tf = form.createTextField(`obs_${fieldIdx}`)
+              tf.addToPage(page, { x: x + 2, y: rowY + 2, width: w - 4, height: rowH - 4 })
               tf.enableMultiline()
-              tf.setFontSize(6)
+              tf.setFontSize(7)
             } catch {}
-          } else if (col.type === 'link') {
-            if (raw) {
-              page.drawText('VER', { x: x + (w - fontReg.widthOfTextAtSize('VER', 6)) / 2, y: rowY + (rowH - 6) / 2, size: 6, font: fontBold, color: rgb(0.14, 0.40, 0.92) })
-              const annots = page.node.lookupMaybe(pdfDoc.context.obj('Annots'))
-              // Add URI link annotation
-              const link = pdfDoc.context.obj({
-                Type: 'Annot', Subtype: 'Link',
-                Rect: [x, rowY, x + w, rowY + rowH],
-                Border: [0, 0, 0],
-                A: { Type: 'Action', S: 'URI', URI: pdfDoc.context.obj(raw) },
-              })
-              const ref = pdfDoc.context.register(link)
-              page.node.set(pdfDoc.context.obj('Annots'), pdfDoc.context.obj([ref]))
-            }
           } else {
-            // Texto estático
-            const lines = clampText(raw, w, 6, fontReg)
-            const lineH = 7.5
+            // Texto estático con wrap de 2 líneas
+            const lines = wrapText(val, w, 7, fontR)
+            const lineH = 9
             const blockH = lines.length * lineH
-            const startY = rowY + (rowH - blockH) / 2 + lineH * 0.3
+            const startY = rowY + (rowH - blockH) / 2 + 4
             lines.forEach((l, li) => {
-              try { page.drawText(l, { x: x + 2, y: startY + (lines.length - 1 - li) * lineH, size: 6, font: fontReg, color: rgb(0.15, 0.15, 0.15) }) } catch {}
+              drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 7, font: fontR, color: rgb(0.12, 0.12, 0.12) })
             })
           }
 
-          if (ci < COLS.length - 1) page.drawLine({ start: { x: x + w, y: rowY }, end: { x: x + w, y: rowY + rowH }, thickness: 0.2, color: rgb(0.85, 0.85, 0.85) })
+          if (ci < COLS.length - 1) page.drawLine({ start: { x: x + w, y: rowY }, end: { x: x + w, y: rowY + rowH }, thickness: 0.3, color: rgb(0.82, 0.82, 0.85) })
           x += w
         })
 
@@ -1649,16 +1621,20 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
         y -= rowH
       }
 
-      const pdfBytes = await pdfDoc.save()
-      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
-      const url  = URL.createObjectURL(blob)
-      const a    = document.createElement('a')
+      const bytes = await pdfDoc.save()
+      const blob  = new Blob([bytes], { type: 'application/pdf' })
+      const url   = URL.createObjectURL(blob)
+      const a     = document.createElement('a')
       a.href = url
-      a.download = `Compras_Rellenable_${(proyNombre || 'proyecto').replace(/[^\w\s]/g, '').trim()}.pdf`
+      a.download = `Compras_Rellenable_${safe(proyNombre || 'proyecto')}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-    } catch (e) { console.error('[PDF Rellenable]', e) }
-    finally { setExportandoRellenable(false) }
+    } catch (err) {
+      console.error('[PDF Rellenable] error:', err)
+      alert('Error generando PDF: ' + (err?.message || String(err)))
+    } finally {
+      setExportandoRellenable(false)
+    }
   }
 
   const save = useCallback(async (r) => {
