@@ -1197,6 +1197,7 @@ const COMPRAS_COLS = [
   { key: 'fechaDefinicion', label: 'F. definición',     w: 100, type: 'date' },
   { key: 'comprado',        label: 'Comprado',          w: 70,  type: 'check' },
   { key: 'fechaEntrega',    label: 'F. entrega',        w: 90,  type: 'date' },
+  { key: 'fechaLimite',     label: 'Fecha límite',      w: 100, type: 'date', limite: true },
   { key: 'link',            label: 'Link',              w: 55,  type: 'link' },
   { key: 'precioUn',        label: '$un.',              w: 80,  type: 'precio' },
   { key: 'precioTot',       label: '$tot',              w: 90,  type: 'calc' },
@@ -1204,7 +1205,7 @@ const COMPRAS_COLS = [
 ]
 
 function newComprasRow() {
-  return { item:'', foto:'', ubicacion:'', categoria:'', marca:'', modelo:'', unidad:'', cant:'', cajasUn:'', definido:false, fechaDefinicion:'', comprado:false, fechaEntrega:'', link:'', precioUn:'', observaciones:'' }
+  return { item:'', foto:'', ubicacion:'', categoria:'', marca:'', modelo:'', unidad:'', cant:'', cajasUn:'', definido:false, fechaDefinicion:'', comprado:false, fechaEntrega:'', fechaLimite:'', link:'', precioUn:'', observaciones:'' }
 }
 
 function isComprasHeader(row) {
@@ -1740,7 +1741,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             <thead>
               <tr style={{ background: '#F3F4F6' }}>
                 {COMPRAS_COLS.map(col => (
-                  <th key={col.key} style={{ padding: '7px 8px', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, fontWeight: 700, color: dark, whiteSpace: 'nowrap', minWidth: 30, width: colWidths[col.key], textAlign: col.type === 'number' || col.type === 'precio' || col.type === 'calc' ? 'right' : 'left', position: 'relative', userSelect: 'none' }}>
+                  <th key={col.key} style={{ padding: '7px 8px', borderBottom: `1px solid ${border}`, borderRight: `1px solid ${border}`, fontWeight: 700, color: col.limite ? '#991B1B' : dark, background: col.limite ? '#FEF2F2' : '#F3F4F6', whiteSpace: 'nowrap', minWidth: 30, width: colWidths[col.key], textAlign: col.type === 'number' || col.type === 'precio' || col.type === 'calc' ? 'right' : 'left', position: 'relative', userSelect: 'none' }}>
                     {col.label}
                     <div onMouseDown={e => startColResize(e, col.key)}
                       style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 5, cursor: 'col-resize', zIndex: 2 }}
@@ -1762,7 +1763,10 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                     onMouseLeave={e => { e.currentTarget.style.background = isHeader ? '#1A1A2E' : comprado ? '#F0FDF4' : 'white' }}>
                     {COMPRAS_COLS.map(col => {
                       const val = row[col.key] ?? ''
-                      const cellStyle = { padding: '4px 6px', borderRight: `1px solid ${isHeader ? '#333' : border}`, verticalAlign: 'middle', minWidth: 30, width: colWidths[col.key] }
+                      const limiteColor = col.limite && !isHeader
+                        ? (row.comprado && row.fechaEntrega ? '#F0FDF4' : row.comprado ? '#FEFCE8' : '#FEF2F2')
+                        : null
+                      const cellStyle = { padding: '4px 6px', borderRight: `1px solid ${isHeader ? '#333' : border}`, verticalAlign: 'middle', minWidth: 30, width: colWidths[col.key], background: limiteColor || undefined }
 
                       if (isHeader && col.key !== 'item' && col.key !== 'categoria') {
                         return <td key={col.key} style={cellStyle} />
@@ -1911,9 +1915,300 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   )
 }
 
+// ─── Listado de Contrataciones ────────────────────────────────────────────────
+
+const RUBROS_OBRA = [
+  'MÁRMOLERÍA / MESADAS', 'HERRERÍA', 'MUEBLES / CARPINTERÍA',
+  'ABERTURAS (VENTANAS Y PUERTAS)', 'PAISAJISMO / RIEGO', 'DOMÓTICA',
+  'TERMOMECÁNICA (AA Y CALEFACCIÓN)', 'AISLACIONES', 'PILETA',
+]
+const RUBROS_ASESORIA = [
+  'ILUMINACIÓN', 'PAISAJISMO', 'ENERGÍAS RENOVABLES', 'INSTALACIONES', 'ESTRUCTURA',
+]
+const TODOS_RUBROS = [...RUBROS_OBRA, ...RUBROS_ASESORIA]
+
+const ESTADOS_CONTRATACION = [
+  { value: 'cotizando',    label: 'Cotizando',     bg: '#F3F4F6', color: '#6B7280' },
+  { value: 'contratado',   label: 'Contratado',    bg: '#EFF6FF', color: '#2563EB' },
+  { value: 'en_ejecucion', label: 'En ejecución',  bg: '#ECFDF5', color: '#059669' },
+  { value: 'finalizado',   label: 'Finalizado',    bg: '#F0FDF4', color: '#2D7A4F' },
+  { value: 'cancelado',    label: 'Cancelado',     bg: '#FEF2F2', color: '#DC2626' },
+]
+
+const CHECKLIST_ITEMS_DEF = [
+  { key: 'doc_cotizar',    label: 'Documentación enviada para cotizar', hasText: true,  hasDate: true  },
+  { key: 'ppto_recibido',  label: 'Presupuesto recibido',               hasText: false, hasDate: true  },
+  { key: 'ppto_aprobado',  label: 'Presupuesto aprobado por cliente',   hasText: false, hasDate: true  },
+  { key: 'contrato',       label: 'Contrato firmado / Adelanto abonado',hasText: false, hasDate: true  },
+  { key: 'doc_ejecutar',   label: 'Documentación para ejecutar / taller de fabricación', hasText: true, hasDate: true },
+  { key: 'planos_entrega', label: 'Planos/documentación entregada (si es asesoría)',      hasText: false, hasDate: true },
+  { key: 'ingreso_obra',   label: 'Fecha de ingreso a obra',            hasText: false, hasDate: true  },
+  { key: 'finalizado',     label: 'Trabajo finalizado y aprobado',      hasText: false, hasDate: true  },
+]
+
+function newContratacion() {
+  return {
+    id: crypto.randomUUID(),
+    rubro: '',
+    empresa: '',
+    contacto: '',
+    descripcion: '',
+    presupuesto: '',
+    aprobadoCliente: false,
+    estado: 'cotizando',
+    checklist: CHECKLIST_ITEMS_DEF.map(d => ({ key: d.key, done: false, texto: '', fecha: '' })),
+    calEventId: null,
+  }
+}
+
+function EstadoChip({ estado }) {
+  const meta = ESTADOS_CONTRATACION.find(e => e.value === estado) || ESTADOS_CONTRATACION[0]
+  return (
+    <span style={{ padding: '2px 8px', borderRadius: 12, fontSize: 11, fontWeight: 700, background: meta.bg, color: meta.color }}>
+      {meta.label}
+    </span>
+  )
+}
+
+function ContratacionCard({ c, isEditor, onChange, onDelete }) {
+  const [open, setOpen] = useState(false)
+
+  const updateField = (field, val) => onChange({ ...c, [field]: val })
+  const updateChecklist = (idx, patch) => {
+    const cl = c.checklist.map((it, i) => i === idx ? { ...it, ...patch } : it)
+    onChange({ ...c, checklist: cl })
+  }
+
+  const ingresoItem = c.checklist.find(it => it.key === 'ingreso_obra')
+  const ingresoFecha = ingresoItem?.fecha || ''
+
+  return (
+    <div style={{ border: `1px solid ${border}`, borderRadius: 10, overflow: 'hidden', marginBottom: 8 }}>
+      {/* Header */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', background: open ? '#FAFAF9' : 'white', userSelect: 'none' }}
+      >
+        <span style={{ fontSize: 14, color: mid, flexShrink: 0 }}>{open ? '▾' : '▸'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: dark }}>{c.rubro || <em style={{ color: '#9CA3AF', fontStyle: 'normal' }}>Sin rubro</em>}</span>
+            <EstadoChip estado={c.estado} />
+            {c.aprobadoCliente && <span style={{ fontSize: 11, background: '#F0FDF4', color: green, padding: '2px 7px', borderRadius: 10, fontWeight: 700 }}>✓ Aprobado</span>}
+          </div>
+          <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
+            {[c.empresa, c.presupuesto ? `$${Number(c.presupuesto).toLocaleString('es-AR')}` : null, ingresoFecha ? `Ingreso: ${ingresoFecha}` : null].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        {isEditor && (
+          <button onClick={e => { e.stopPropagation(); onDelete() }}
+            style={{ background: 'none', border: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 16, padding: 4, lineHeight: 1 }}
+            title="Eliminar contratación">×</button>
+        )}
+      </div>
+
+      {/* Expanded */}
+      {open && (
+        <div style={{ padding: '14px 16px', borderTop: `1px solid ${border}`, background: 'white' }}>
+          {/* Campos principales */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10, marginBottom: 16 }}>
+            <div>
+              <label style={{ fontSize: 11, color: mid, fontWeight: 600, display: 'block', marginBottom: 4 }}>Rubro</label>
+              {isEditor ? (
+                <select value={c.rubro} onChange={e => updateField('rubro', e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: `1px solid ${border}`, fontSize: 12, fontFamily: 'inherit', background: 'white' }}>
+                  <option value="">— Seleccionar —</option>
+                  <optgroup label="Obra">
+                    {RUBROS_OBRA.map(r => <option key={r} value={r}>{r}</option>)}
+                  </optgroup>
+                  <optgroup label="Asesoría">
+                    {RUBROS_ASESORIA.map(r => <option key={r} value={r}>{r}</option>)}
+                  </optgroup>
+                </select>
+              ) : (
+                <span style={{ fontSize: 12, color: dark }}>{c.rubro || '—'}</span>
+              )}
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: mid, fontWeight: 600, display: 'block', marginBottom: 4 }}>Estado</label>
+              {isEditor ? (
+                <select value={c.estado} onChange={e => updateField('estado', e.target.value)}
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: `1px solid ${border}`, fontSize: 12, fontFamily: 'inherit', background: 'white' }}>
+                  {ESTADOS_CONTRATACION.map(e => <option key={e.value} value={e.value}>{e.label}</option>)}
+                </select>
+              ) : (
+                <EstadoChip estado={c.estado} />
+              )}
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: mid, fontWeight: 600, display: 'block', marginBottom: 4 }}>Empresa / Contratista</label>
+              {isEditor ? (
+                <input value={c.empresa} onChange={e => updateField('empresa', e.target.value)} placeholder="Empresa o persona"
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: `1px solid ${border}`, fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              ) : (
+                <span style={{ fontSize: 12, color: dark }}>{c.empresa || '—'}</span>
+              )}
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: mid, fontWeight: 600, display: 'block', marginBottom: 4 }}>Contacto</label>
+              {isEditor ? (
+                <input value={c.contacto} onChange={e => updateField('contacto', e.target.value)} placeholder="Teléfono o mail"
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: `1px solid ${border}`, fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              ) : (
+                <span style={{ fontSize: 12, color: dark }}>{c.contacto || '—'}</span>
+              )}
+            </div>
+            <div>
+              <label style={{ fontSize: 11, color: mid, fontWeight: 600, display: 'block', marginBottom: 4 }}>$ Presupuesto</label>
+              {isEditor ? (
+                <input value={c.presupuesto} onChange={e => updateField('presupuesto', e.target.value)} placeholder="0" type="number"
+                  style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: `1px solid ${border}`, fontSize: 12, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+              ) : (
+                <span style={{ fontSize: 12, color: dark }}>{c.presupuesto ? `$${Number(c.presupuesto).toLocaleString('es-AR')}` : '—'}</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 18 }}>
+              <input type="checkbox" id={`aprobado-${c.id}`} checked={!!c.aprobadoCliente} onChange={e => updateField('aprobadoCliente', e.target.checked)} disabled={!isEditor}
+                style={{ width: 15, height: 15, cursor: isEditor ? 'pointer' : 'default', accentColor: green }} />
+              <label htmlFor={`aprobado-${c.id}`} style={{ fontSize: 12, color: dark, fontWeight: 600, cursor: isEditor ? 'pointer' : 'default' }}>Aprobado por cliente</label>
+            </div>
+          </div>
+
+          {/* Descripción */}
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 11, color: mid, fontWeight: 600, display: 'block', marginBottom: 4 }}>Descripción / Alcance</label>
+            {isEditor ? (
+              <textarea value={c.descripcion} onChange={e => updateField('descripcion', e.target.value)} rows={2} placeholder="Descripción del trabajo..."
+                style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: `1px solid ${border}`, fontSize: 12, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+            ) : (
+              <p style={{ fontSize: 12, color: dark, margin: 0 }}>{c.descripcion || '—'}</p>
+            )}
+          </div>
+
+          {/* Checklist */}
+          <div>
+            <div style={{ fontSize: 11, color: mid, fontWeight: 700, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Checklist de gestión</div>
+            {CHECKLIST_ITEMS_DEF.map((def, idx) => {
+              const item = c.checklist[idx] || { done: false, texto: '', fecha: '' }
+              const isIngreso = def.key === 'ingreso_obra'
+              return (
+                <div key={def.key} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: idx < CHECKLIST_ITEMS_DEF.length - 1 ? `1px solid ${border}` : 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    <input type="checkbox" checked={!!item.done} onChange={e => updateChecklist(idx, { done: e.target.checked })} disabled={!isEditor}
+                      style={{ marginTop: 2, width: 14, height: 14, cursor: isEditor ? 'pointer' : 'default', accentColor: isIngreso ? blue : orange, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: item.done ? '#6B7280' : dark, textDecoration: item.done ? 'line-through' : 'none' }}>
+                        {def.label}
+                        {isIngreso && <span style={{ marginLeft: 6, fontSize: 10, color: blue, fontWeight: 700 }}>→ calendario</span>}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                        {def.hasText && isEditor && (
+                          <input value={item.texto || ''} onChange={e => updateChecklist(idx, { texto: e.target.value })}
+                            placeholder="Indicar documentación..." disabled={!isEditor}
+                            style={{ flex: 1, minWidth: 140, padding: '4px 6px', borderRadius: 6, border: `1px solid ${border}`, fontSize: 11, fontFamily: 'inherit' }} />
+                        )}
+                        {def.hasText && !isEditor && item.texto && (
+                          <span style={{ fontSize: 11, color: mid }}>{item.texto}</span>
+                        )}
+                        {def.hasDate && (
+                          isEditor ? (
+                            <input type="date" value={item.fecha || ''} onChange={e => updateChecklist(idx, { fecha: e.target.value })}
+                              style={{ padding: '4px 6px', borderRadius: 6, border: `1px solid ${isIngreso ? blue : border}`, fontSize: 11, fontFamily: 'inherit', color: isIngreso ? blue : dark }} />
+                          ) : item.fecha ? (
+                            <span style={{ fontSize: 11, color: mid }}>{item.fecha}</span>
+                          ) : null
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function TablaContrataciones({ contratacionesData, isEditor, proyId, proyNombre, onSave }) {
+  const [lista, setLista] = useState(() => Array.isArray(contratacionesData) ? contratacionesData : [])
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
+
+  useEffect(() => {
+    setLista(Array.isArray(contratacionesData) ? contratacionesData : [])
+    setDirty(false)
+  }, [proyId])
+
+  const update = (id, patch) => {
+    setLista(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
+    setDirty(true)
+  }
+
+  const addContratacion = () => {
+    setLista(prev => [...prev, newContratacion()])
+    setDirty(true)
+  }
+
+  const deleteContratacion = (id) => {
+    setLista(prev => prev.filter(c => c.id !== id))
+    setDirty(true)
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await onSave(lista)
+      setDirty(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+        <span style={{ fontSize: 12, color: '#9CA3AF' }}>{lista.length} contratación{lista.length !== 1 ? 'es' : ''}</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {isEditor && dirty && (
+            <button onClick={handleSave} disabled={saving}
+              style={{ padding: '6px 14px', borderRadius: 8, border: 'none', background: orange, color: 'white', fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1 }}>
+              {saving ? 'Guardando…' : '✓ Guardar'}
+            </button>
+          )}
+          {isEditor && (
+            <button onClick={addContratacion}
+              style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${border}`, background: 'white', color: dark, fontWeight: 700, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+              + Agregar
+            </button>
+          )}
+        </div>
+      </div>
+
+      {lista.length === 0 ? (
+        <div style={{ border: `2px dashed ${border}`, borderRadius: 10, padding: '32px 20px', textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>
+          Sin contrataciones.{isEditor && <span onClick={addContratacion} style={{ color: orange, cursor: 'pointer', fontWeight: 700, marginLeft: 6 }}>Agregar la primera</span>}
+        </div>
+      ) : (
+        lista.map(c => (
+          <ContratacionCard
+            key={c.id}
+            c={c}
+            isEditor={isEditor}
+            onChange={updated => update(c.id, updated)}
+            onDelete={() => deleteContratacion(c.id)}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate, onSaveDoc, onSaveCompras }) {
+function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, onDelete, onToggle, isExpanded, onUpdateItem, onVincularObra, presupuestoInfo, projects, cronogramas, onNavigate, onSaveDoc, onSaveCompras, onSaveContrataciones }) {
   const [activeTab, setActiveTab] = useState('checklist')
   const estadoMeta   = ESTADO_COLORS[p.estadoGeneral] || ESTADO_COLORS['En análisis']
   const avance       = checklistItems ? calcAvanceTotal(checklistItems, p.tipoEncargo) : (p.avanceTotal ?? 0)
@@ -2044,9 +2339,10 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
           {/* Tabs */}
           <div style={{ display: 'flex', gap: 0, borderBottom: `1px solid ${border}`, background: 'white' }}>
             {[
-              { key: 'checklist',     label: 'Checklist' },
-              { key: 'documentacion', label: 'Documentación' },
-              { key: 'compras',       label: 'Listado de compras' },
+              { key: 'checklist',        label: 'Checklist' },
+              { key: 'documentacion',    label: 'Documentación' },
+              { key: 'compras',          label: 'Listado de compras' },
+              { key: 'contrataciones',   label: 'Contrataciones' },
             ].map(tab => (
               <button key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
@@ -2103,6 +2399,17 @@ function ProyectoCard({ p, checklistItems, loadingChecklist, isEditor, onEdit, o
                 proyId={p.id}
                 proyNombre={p.nombre}
                 onSave={data => onSaveCompras(p.id, data)}
+              />
+            )}
+
+            {activeTab === 'contrataciones' && (
+              <TablaContrataciones
+                key={p.id + '-contrataciones'}
+                contratacionesData={p.contrataciones || []}
+                isEditor={isEditor}
+                proyId={p.id}
+                proyNombre={p.nombre}
+                onSave={lista => onSaveContrataciones(p.id, lista)}
               />
             )}
           </div>
@@ -2205,7 +2512,71 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
   const handleSaveCompras = async (proyId, data) => {
     const proy = proyectos.find(p => p.id === proyId)
     if (!proy) return
-    const updated = await upsertProyectoArmar({ ...proy, compras: data })
+
+    // Sincronizar eventos de calendario para filas con Fecha límite
+    const rowsConFecha = (data.rows || []).filter(r => !isComprasHeader(r) && r.fechaLimite)
+    const newRows = [...(data.rows || [])]
+    for (let i = 0; i < newRows.length; i++) {
+      const row = newRows[i]
+      if (isComprasHeader(row) || !row.fechaLimite) {
+        if (row.calEventId) {
+          // Si se borró la fecha límite, eliminar evento (no bloqueante)
+          newRows[i] = { ...row, calEventId: null }
+        }
+        continue
+      }
+      const esVerde   = row.comprado && row.fechaEntrega
+      const esAmarillo = row.comprado && !row.fechaEntrega
+      const estado    = esVerde ? 'completado' : 'pendiente'
+      const color     = esVerde ? '#2D7A4F' : esAmarillo ? '#D97706' : '#DC2626'
+      const evento = {
+        ...(row.calEventId ? { id: row.calEventId } : {}),
+        proyectoArmarId: proy.id,
+        origen:     'proyecto',
+        tipoEvento: 'hito',
+        titulo:     `Fecha límite compra: ${row.modelo || row.categoria || row.item || 'ítem'}`,
+        descripcion: `${proy.nombre} — ${row.ubicacion || ''}`.trim().replace(/—\s*$/, ''),
+        fecha:      row.fechaLimite,
+        estado,
+        color,
+      }
+      const saved = await upsertCalendarioEvento(evento)
+      if (saved) newRows[i] = { ...row, calEventId: saved.id }
+    }
+
+    const updatedData = { ...data, rows: newRows }
+    const updated = await upsertProyectoArmar({ ...proy, compras: updatedData })
+    if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
+  }
+
+  const handleSaveContrataciones = async (proyId, lista) => {
+    const proy = proyectos.find(p => p.id === proyId)
+    if (!proy) return
+    const newLista = [...lista]
+    for (let i = 0; i < newLista.length; i++) {
+      const c = newLista[i]
+      const ingresoItem = c.checklist?.find(it => it.key === 'ingreso_obra')
+      const fechaIngreso = ingresoItem?.fecha || ''
+      if (!fechaIngreso) {
+        if (c.calEventId) newLista[i] = { ...c, calEventId: null }
+        continue
+      }
+      const estado = c.estado === 'finalizado' ? 'completado' : 'pendiente'
+      const color  = c.estado === 'finalizado' ? '#2D7A4F' : c.estado === 'en_ejecucion' ? '#059669' : '#2563EB'
+      const evento = {
+        ...(c.calEventId ? { id: c.calEventId } : {}),
+        proyectoArmarId: proy.id,
+        origen: 'proyecto', tipoEvento: 'hito',
+        titulo: `Ingreso a obra: ${c.rubro || c.empresa || 'Contratación'} — ${proy.nombre}`,
+        descripcion: [c.empresa, c.descripcion].filter(Boolean).join(' · '),
+        fecha: fechaIngreso,
+        estado,
+        color,
+      }
+      const saved = await upsertCalendarioEvento(evento)
+      if (saved) newLista[i] = { ...c, calEventId: saved.id }
+    }
+    const updated = await upsertProyectoArmar({ ...proy, contrataciones: newLista })
     if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
   }
 
@@ -2297,6 +2668,7 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
               onNavigate={onNavigate}
               onSaveDoc={handleSaveDoc}
               onSaveCompras={handleSaveCompras}
+              onSaveContrataciones={handleSaveContrataciones}
             />
           ))}
         </div>
