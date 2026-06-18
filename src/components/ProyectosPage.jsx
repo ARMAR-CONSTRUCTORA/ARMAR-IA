@@ -1459,48 +1459,101 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const exportarPDFRellenable = async () => {
     setExportandoRellenable(true)
     try {
-      const { PDFDocument, rgb, StandardFonts, PDFName, PDFString, PDFArray, PDFNumber, PDFDict } = await import('pdf-lib')
+      const { PDFDocument, rgb, StandardFonts } = await import('pdf-lib')
 
-      // Elimina caracteres fuera de WinAnsiEncoding (Helvetica estándar)
       const safe = (str) => String(str || '').replace(/[^\x20-\xFF]/g, '').trim()
 
-      const pdfDoc  = await PDFDocument.create()
-      const fontB   = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-      const fontR   = await pdfDoc.embedFont(StandardFonts.Helvetica)
-      const form    = pdfDoc.getForm()
+      const pdfDoc = await PDFDocument.create()
+      const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold)
+      const fontR  = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      const form   = pdfDoc.getForm()
 
-      // A3 landscape (420x297mm) en puntos (1mm = 2.8346pt)
-      const PT = 2.8346
-      const PW = 1190, PH = 842   // A3 landscape redondeado
-      const MG = 28               // ~10mm
+      const PW = 1190, PH = 842, MG = 28
       const usableW = PW - MG * 2
 
+      // ── Columnas del listado ─────────────────────────────────────────────────
       const COLS = [
-        { key: 'item',        label: 'ITEM',       fr: 0.04 },
-        { key: 'foto',        label: 'FOTO',       fr: 0.09, tipo: 'imagen' },
-        { key: 'ubicacion',   label: 'UBICACION',  fr: 0.12 },
-        { key: 'categoria',   label: 'CATEGORIA',  fr: 0.10 },
-        { key: 'marca',       label: 'MARCA',      fr: 0.08 },
-        { key: 'modelo',      label: 'MODELO',     fr: 0.17 },
-        { key: 'cant',        label: 'CANT',       fr: 0.05 },
-        { key: 'definido',    label: 'APROBADO',   fr: 0.07, tipo: 'check' },
-        { key: 'comprado',    label: 'COMPRADO',   fr: 0.07, tipo: 'check' },
-        { key: 'obs_cliente', label: 'OBS. CLIENTE', fr: 0.21, tipo: 'field' },
+        { key: 'item',        label: 'ITEM',         fr: 0.035 },
+        { key: 'foto',        label: 'FOTO',         fr: 0.075, tipo: 'imagen' },
+        { key: 'ubicacion',   label: 'UBICACION',    fr: 0.085 },
+        { key: 'categoria',   label: 'CATEGORIA',    fr: 0.085 },
+        { key: 'marca',       label: 'MARCA',        fr: 0.065 },
+        { key: 'modelo',      label: 'MODELO',       fr: 0.125 },
+        { key: 'unidad',      label: 'UNIDAD',       fr: 0.04  },
+        { key: 'cant',        label: 'CANT.',        fr: 0.04  },
+        { key: 'cajasUn',     label: 'CAJAS/UN',     fr: 0.05  },
+        { key: 'fechaLimite', label: 'ING. OBRA',    fr: 0.055 },
+        { key: 'definido',    label: 'APROBADO',     fr: 0.055, tipo: 'check' },
+        { key: 'obs_cliente', label: 'OBS. CLIENTE', fr: 0.29,  tipo: 'field' },
       ]
       const colW = COLS.map(c => Math.floor(usableW * c.fr))
+      // distribuir remanente en última columna
+      const totalW = colW.reduce((s, w) => s + w, 0)
+      colW[colW.length - 1] += usableW - totalW
 
-      const TITLE_H = 32
-      const INSTR_H = 20
-      const THDR_H  = 18
-      const ROW_H   = 46
-      const HDR_H   = 18
+      const TITLE_H  = 36
+      const META_H   = 22   // fila cliente/revisión/fecha
+      const THDR_H   = 16
+      const ROW_H    = 46
+      const HDR_H    = 16
 
-      // Pre-embed imágenes
+      // ── Página de instructivo ────────────────────────────────────────────────
+      const instrPage = pdfDoc.addPage([PW, PH])
+
+      // Cabecera azul oscuro
+      instrPage.drawRectangle({ x: MG, y: PH - MG - 60, width: usableW, height: 60, color: rgb(0.08, 0.12, 0.28) })
+      try { instrPage.drawText('ARMAR · LISTADO DE COMPRAS', { x: MG + 16, y: PH - MG - 28, size: 18, font: fontB, color: rgb(1,1,1) }) } catch {}
+      try { instrPage.drawText('Revision del cliente', { x: MG + 16, y: PH - MG - 46, size: 10, font: fontR, color: rgb(0.7,0.8,1) }) } catch {}
+      try { instrPage.drawText(safe(proyNombre), { x: PW - MG - fontB.widthOfTextAtSize(safe(proyNombre), 10) - 16, y: PH - MG - 40, size: 10, font: fontB, color: rgb(1,1,1) }) } catch {}
+
+      const instrLines = [
+        { text: 'INSTRUCCIONES PARA EL CLIENTE', bold: true, size: 11, gap: 24 },
+        { text: '', gap: 4 },
+        { text: 'Este documento ha sido preparado por el equipo ARMAR para su revision y aprobacion. Por favor:', bold: false, size: 9, gap: 14 },
+        { text: '', gap: 6 },
+        { text: '1.  APROBADO: marque el casillero si esta de acuerdo con el material/producto propuesto.', bold: false, size: 9, gap: 12 },
+        { text: '2.  OBS. CLIENTE: escriba cualquier comentario, consulta o modificacion que desee en el campo de texto.', bold: false, size: 9, gap: 12 },
+        { text: '3.  ING. OBRA: fecha prevista en que el material debe ingresar a la obra. Consulte si tiene dudas.', bold: false, size: 9, gap: 12 },
+        { text: '4.  Una vez completado, guarde el PDF y envielo a su arquitecto/a ARMAR.', bold: false, size: 9, gap: 20 },
+        { text: '', gap: 8 },
+        { text: 'CAMPOS QUE DEBE COMPLETAR EL CLIENTE', bold: true, size: 10, gap: 14 },
+        { text: '', gap: 6 },
+        { text: '  •  Nombre del cliente (encabezado de cada pagina)', bold: false, size: 9, gap: 10 },
+        { text: '  •  Numero de revision (encabezado de cada pagina)', bold: false, size: 9, gap: 10 },
+        { text: '  •  Fecha de revision (encabezado de cada pagina)', bold: false, size: 9, gap: 10 },
+        { text: '  •  Casilleros APROBADO en cada fila', bold: false, size: 9, gap: 10 },
+        { text: '  •  Observaciones en cada fila que lo requiera', bold: false, size: 9, gap: 22 },
+        { text: '', gap: 8 },
+        { text: 'IMPORTANTE', bold: true, size: 10, gap: 14 },
+        { text: '', gap: 4 },
+        { text: 'Los materiales marcados como APROBADO seran los que se procederan a comprar. Cualquier cambio', bold: false, size: 9, gap: 11 },
+        { text: 'posterior puede generar demoras o costos adicionales. En caso de duda, consulte antes de aprobar.', bold: false, size: 9, gap: 22 },
+      ]
+
+      let iy = PH - MG - 60 - 28
+      for (const ln of instrLines) {
+        if (ln.text) {
+          try {
+            instrPage.drawText(safe(ln.text), { x: MG + 20, y: iy, size: ln.size || 9, font: ln.bold ? fontB : fontR, color: ln.bold ? rgb(0.08,0.12,0.28) : rgb(0.18,0.18,0.22) })
+          } catch {}
+        }
+        iy -= ln.gap || 12
+      }
+
+      // Firma
+      instrPage.drawRectangle({ x: MG, y: MG + 30, width: usableW / 3 - 10, height: 1, color: rgb(0.6,0.6,0.6) })
+      try { instrPage.drawText('Firma del cliente', { x: MG, y: MG + 16, size: 8, font: fontR, color: rgb(0.5,0.5,0.5) }) } catch {}
+      instrPage.drawRectangle({ x: MG + usableW / 3 + 10, y: MG + 30, width: usableW / 3 - 20, height: 1, color: rgb(0.6,0.6,0.6) })
+      try { instrPage.drawText('Aclaracion', { x: MG + usableW / 3 + 10, y: MG + 16, size: 8, font: fontR, color: rgb(0.5,0.5,0.5) }) } catch {}
+      instrPage.drawRectangle({ x: MG + (usableW / 3) * 2 + 10, y: MG + 30, width: usableW / 3 - 10, height: 1, color: rgb(0.6,0.6,0.6) })
+      try { instrPage.drawText('Fecha', { x: MG + (usableW / 3) * 2 + 10, y: MG + 16, size: 8, font: fontR, color: rgb(0.5,0.5,0.5) }) } catch {}
+
+      // ── Pre-embed imágenes ───────────────────────────────────────────────────
       const imgCache = {}
       for (const row of rows) {
         if (row.foto && !imgCache[row.foto]) {
           try {
-            const b64 = await fetchImageBase64(row.foto)
+            const b64   = await fetchImageBase64(row.foto)
             if (!b64) continue
             const data  = b64.split(',')[1]
             const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
@@ -1511,48 +1564,65 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
         }
       }
 
+      // ── Páginas del listado ──────────────────────────────────────────────────
       let pageNum = 0, page, bodyTop
+      let clienteFieldDone = false
 
       const addPage = () => {
         pageNum++
         page = pdfDoc.addPage([PW, PH])
 
-        // Título
-        page.drawRectangle({ x: MG, y: PH - MG - TITLE_H, width: usableW, height: TITLE_H, color: rgb(0.10, 0.10, 0.18) })
-        try { page.drawText('LISTADO DE COMPRAS - REVISION CLIENTE', { x: MG + 8, y: PH - MG - TITLE_H + 12, size: 11, font: fontB, color: rgb(1,1,1) }) } catch {}
-        try { page.drawText(safe(proyNombre), { x: MG + 8, y: PH - MG - TITLE_H + 4, size: 7, font: fontR, color: rgb(0.7,0.7,0.7) }) } catch {}
-        try { page.drawText(`Pag. ${pageNum}`, { x: PW - MG - 8, y: PH - MG - TITLE_H + 12, size: 7, font: fontR, color: rgb(0.75,0.75,0.75) }) } catch {}
+        // Barra título
+        page.drawRectangle({ x: MG, y: PH - MG - TITLE_H, width: usableW, height: TITLE_H, color: rgb(0.08, 0.12, 0.28) })
+        try { page.drawText('LISTADO DE COMPRAS - REVISION CLIENTE', { x: MG + 10, y: PH - MG - 16, size: 10, font: fontB, color: rgb(1,1,1) }) } catch {}
+        try { page.drawText(safe(proyNombre), { x: MG + 10, y: PH - MG - 28, size: 7.5, font: fontR, color: rgb(0.65,0.75,1) }) } catch {}
+        try { page.drawText(`Pag. ${pageNum}`, { x: PW - MG - 36, y: PH - MG - 20, size: 7, font: fontR, color: rgb(0.7,0.7,0.85) }) } catch {}
 
         let nextTop = PH - MG - TITLE_H
 
-        // Instrucción solo pág 1
-        if (pageNum === 1) {
-          page.drawRectangle({ x: MG, y: nextTop - INSTR_H, width: usableW, height: INSTR_H, color: rgb(0.97, 0.97, 0.86) })
-          try { page.drawText('Por favor complete los campos APROBADO, COMPRADO y OBS. CLIENTE y reenvie este PDF.', { x: MG + 6, y: nextTop - INSTR_H + 6, size: 7, font: fontR, color: rgb(0.35,0.28,0.05) }) } catch {}
-          nextTop -= INSTR_H
-        }
+        // Fila meta (cliente / revisión / fecha) — fillable solo pág 1, estático resto
+        page.drawRectangle({ x: MG, y: nextTop - META_H, width: usableW, height: META_H, color: rgb(0.94, 0.96, 1) })
+        page.drawLine({ start: { x: MG, y: nextTop - META_H }, end: { x: MG + usableW, y: nextTop - META_H }, thickness: 0.5, color: rgb(0.7,0.75,0.9) })
+
+        const metaFields = [
+          { label: 'CLIENTE:', key: 'meta_cliente', x: MG + 6 },
+          { label: 'REVISION N°:', key: 'meta_revision', x: MG + usableW * 0.35 },
+          { label: 'FECHA:', key: 'meta_fecha', x: MG + usableW * 0.6 },
+        ]
+        metaFields.forEach(mf => {
+          try { page.drawText(mf.label, { x: mf.x, y: nextTop - META_H + 7, size: 6.5, font: fontB, color: rgb(0.2,0.25,0.5) }) } catch {}
+          const labelW = fontB.widthOfTextAtSize(mf.label, 6.5) + 4
+          const fieldW = mf.key === 'meta_cliente' ? usableW * 0.32 : mf.key === 'meta_revision' ? usableW * 0.22 : usableW * 0.38
+          if (!clienteFieldDone || pageNum === 1) {
+            try {
+              const tf = form.createTextField(mf.key)
+              tf.addToPage(page, { x: mf.x + labelW, y: nextTop - META_H + 3, width: fieldW - labelW - 4, height: META_H - 6 })
+              tf.setFontSize(8)
+            } catch {}
+          }
+        })
+        if (pageNum === 1) clienteFieldDone = true
+
+        nextTop -= META_H
 
         // Header columnas
-        page.drawRectangle({ x: MG, y: nextTop - THDR_H, width: usableW, height: THDR_H, color: rgb(0.92, 0.92, 0.95) })
+        page.drawRectangle({ x: MG, y: nextTop - THDR_H, width: usableW, height: THDR_H, color: rgb(0.20, 0.25, 0.50) })
         let hx = MG
         COLS.forEach((col, ci) => {
-          try { page.drawText(col.label, { x: hx + 3, y: nextTop - THDR_H + 5, size: 6, font: fontB, color: rgb(0.2, 0.2, 0.3) }) } catch {}
-          if (ci < COLS.length - 1) page.drawLine({ start: { x: hx + colW[ci], y: nextTop - THDR_H }, end: { x: hx + colW[ci], y: nextTop }, thickness: 0.4, color: rgb(0.75,0.75,0.8) })
+          try { page.drawText(col.label, { x: hx + 3, y: nextTop - THDR_H + 5, size: 5.5, font: fontB, color: rgb(1,1,1) }) } catch {}
+          if (ci < COLS.length - 1) page.drawLine({ start: { x: hx + colW[ci], y: nextTop - THDR_H }, end: { x: hx + colW[ci], y: nextTop }, thickness: 0.4, color: rgb(0.4,0.45,0.7) })
           hx += colW[ci]
         })
 
         bodyTop = nextTop - THDR_H
-        return bodyTop  // y del borde inferior del header = tope de filas
+        return bodyTop
       }
-
-      let fieldIdx = 0
-      let y = addPage()
 
       const drawTextSafe = (txt, opts) => { try { page.drawText(safe(txt), opts) } catch {} }
 
       const wrapText = (txt, maxW, sz, f) => {
         const words = safe(txt).split(' ').filter(Boolean)
-        const lines = []
+        const lines = [], maxLines = 2
         let cur = ''
         for (const w of words) {
           const test = cur ? cur + ' ' + w : w
@@ -1560,25 +1630,28 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             if (f.widthOfTextAtSize(test, sz) > maxW - 6) { if (cur) lines.push(cur); cur = w }
             else cur = test
           } catch { cur = test }
+          if (lines.length >= maxLines) break
         }
-        if (cur) lines.push(cur)
-        return lines.slice(0, 2)
+        if (cur && lines.length < maxLines) lines.push(cur)
+        return lines
       }
+
+      let fieldIdx = 0
+      let y = addPage()
 
       for (const row of rows) {
         const isHdr = isComprasHeader(row)
         const rowH  = isHdr ? HDR_H : ROW_H
 
-        if (y - rowH < MG) y = addPage()
+        if (y - rowH < MG + 10) y = addPage()
         const rowY = y - rowH
 
-        // Fondo fila
         if (isHdr) {
-          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.17, 0.17, 0.30) })
-        } else if (fieldIdx % 2 === 0) {
-          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.975, 0.975, 0.99) })
+          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: rgb(0.13, 0.16, 0.36) })
+        } else {
+          page.drawRectangle({ x: MG, y: rowY, width: usableW, height: rowH, color: fieldIdx % 2 === 0 ? rgb(0.98, 0.98, 1) : rgb(1,1,1) })
         }
-        page.drawLine({ start: { x: MG, y: rowY }, end: { x: MG + usableW, y: rowY }, thickness: 0.3, color: rgb(0.82, 0.82, 0.85) })
+        page.drawLine({ start: { x: MG, y: rowY }, end: { x: MG + usableW, y: rowY }, thickness: 0.3, color: rgb(0.82,0.82,0.88) })
 
         let x = MG
         COLS.forEach((col, ci) => {
@@ -1586,8 +1659,8 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
           const val = row[col.key] ?? ''
 
           if (isHdr) {
-            if (col.key === 'item' || col.key === 'categoria') {
-              drawTextSafe(val, { x: x + 3, y: rowY + (rowH - 7) / 2, size: 7, font: fontB, color: rgb(1,1,1) })
+            if (col.key === 'item' || col.key === 'ubicacion' || col.key === 'categoria') {
+              drawTextSafe(val, { x: x + 3, y: rowY + (rowH - 6) / 2, size: 6.5, font: fontB, color: rgb(1,1,1) })
             }
           } else if (col.tipo === 'imagen') {
             const img = imgCache[val]
@@ -1598,7 +1671,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               } catch {}
             }
           } else if (col.tipo === 'check') {
-            const sz  = Math.min(w - 8, rowH - 8, 18)
+            const sz  = Math.min(w - 10, rowH - 10, 16)
             const cbX = Math.round(x + (w - sz) / 2)
             const cbY = Math.round(rowY + (rowH - sz) / 2)
             try {
@@ -1614,17 +1687,16 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               tf.setFontSize(7)
             } catch {}
           } else {
-            // Texto estático con wrap de 2 líneas
-            const lines = wrapText(val, w, 7, fontR)
+            const lines = wrapText(String(val), w, 7, fontR)
             const lineH = 9
             const blockH = lines.length * lineH
-            const startY = rowY + (rowH - blockH) / 2 + 4
+            const startY = rowY + (rowH - blockH) / 2 + 3
             lines.forEach((l, li) => {
-              drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 7, font: fontR, color: rgb(0.12, 0.12, 0.12) })
+              drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 7, font: fontR, color: rgb(0.12,0.12,0.15) })
             })
           }
 
-          if (ci < COLS.length - 1) page.drawLine({ start: { x: x + w, y: rowY }, end: { x: x + w, y: rowY + rowH }, thickness: 0.3, color: rgb(0.82, 0.82, 0.85) })
+          if (ci < COLS.length - 1) page.drawLine({ start: { x: x + w, y: rowY }, end: { x: x + w, y: rowY + rowH }, thickness: 0.3, color: rgb(0.82,0.82,0.88) })
           x += w
         })
 
