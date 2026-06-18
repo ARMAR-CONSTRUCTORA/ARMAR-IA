@@ -845,8 +845,8 @@ function toDbCalendarioEvento(e) {
     descripcion:       e.descripcion || '',
     fecha:             e.fecha || null,
     estado:            e.estado || 'pendiente',
-    color:             e.color || null,
   }
+  if (e.color) out.color = e.color  // omit if falsy — column may not exist yet
   if (e.id) out.id = e.id
   return out
 }
