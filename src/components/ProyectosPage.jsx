@@ -1471,23 +1471,29 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       const PW = 1190, PH = 842, MG = 28
       const usableW = PW - MG * 2
 
-      // ── Columnas del listado ─────────────────────────────────────────────────
+      // ── Columnas del listado — todas las del web + OBS. CLIENTE fillable ────
       const COLS = [
-        { key: 'item',        label: 'ITEM',         fr: 0.035 },
-        { key: 'foto',        label: 'FOTO',         fr: 0.075, tipo: 'imagen' },
-        { key: 'ubicacion',   label: 'UBICACION',    fr: 0.085 },
-        { key: 'categoria',   label: 'CATEGORIA',    fr: 0.085 },
-        { key: 'marca',       label: 'MARCA',        fr: 0.065 },
-        { key: 'modelo',      label: 'MODELO',       fr: 0.125 },
-        { key: 'unidad',      label: 'UNIDAD',       fr: 0.04  },
-        { key: 'cant',        label: 'CANT.',        fr: 0.04  },
-        { key: 'cajasUn',     label: 'CAJAS/UN',     fr: 0.05  },
-        { key: 'fechaLimite', label: 'ING. OBRA',    fr: 0.055 },
-        { key: 'definido',    label: 'APROBADO',     fr: 0.055, tipo: 'check' },
-        { key: 'obs_cliente', label: 'OBS. CLIENTE', fr: 0.29,  tipo: 'field' },
+        { key: 'item',            label: 'ITEM',          fr: 0.031 },
+        { key: 'foto',            label: 'FOTO',          fr: 0.060, tipo: 'imagen' },
+        { key: 'ubicacion',       label: 'UBICACION',     fr: 0.069 },
+        { key: 'categoria',       label: 'CATEGORIA',     fr: 0.062 },
+        { key: 'marca',           label: 'MARCA',         fr: 0.051 },
+        { key: 'modelo',          label: 'MODELO',        fr: 0.086 },
+        { key: 'unidad',          label: 'UN.',           fr: 0.025 },
+        { key: 'cant',            label: 'CANT.',         fr: 0.028 },
+        { key: 'cajasUn',         label: 'CAJ/UN',        fr: 0.034 },
+        { key: 'definido',        label: 'DEFINIDO',      fr: 0.029, tipo: 'check' },
+        { key: 'fechaDefinicion', label: 'F.DEF.',        fr: 0.046 },
+        { key: 'comprado',        label: 'COMPRADO',      fr: 0.029, tipo: 'check' },
+        { key: 'fechaEntrega',    label: 'F.ENTREGA',     fr: 0.046 },
+        { key: 'fechaLimite',     label: 'ING.OBRA',      fr: 0.049 },
+        { key: 'link',            label: 'LINK',          fr: 0.035 },
+        { key: 'precioUn',        label: '$UN.',          fr: 0.046 },
+        { key: 'precioTot',       label: '$TOT.',         fr: 0.046, tipo: 'calc' },
+        { key: 'observaciones',   label: 'OBSERVACIONES', fr: 0.066 },
+        { key: 'obs_cliente',     label: 'OBS. CLIENTE',  fr: 0.162, tipo: 'field' },
       ]
       const colW = COLS.map(c => Math.floor(usableW * c.fr))
-      // distribuir remanente en última columna
       const totalW = colW.reduce((s, w) => s + w, 0)
       colW[colW.length - 1] += usableW - totalW
 
@@ -1686,13 +1692,24 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               tf.enableMultiline()
               tf.setFontSize(7)
             } catch {}
+          } else if (col.tipo === 'calc') {
+            const p = parseFloat(String(row.precioUn  || '').replace(/\./g,'').replace(',','.')) || 0
+            const q = parseFloat(String(row.cajasUn || '').replace(',','.')) || 0
+            const tot = p && q ? Math.round(p * q).toLocaleString('es-AR') : ''
+            const lines = wrapText(tot, w, 6.5, fontR)
+            const lineH = 9
+            const startY = rowY + (rowH - lines.length * lineH) / 2 + 3
+            lines.forEach((l, li) => {
+              drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 6.5, font: fontR, color: rgb(0.12,0.12,0.15) })
+            })
           } else {
-            const lines = wrapText(String(val), w, 7, fontR)
+            const displayVal = col.key === 'link' ? (val ? 'Ver link' : '') : String(val)
+            const lines = wrapText(displayVal, w, 6.5, fontR)
             const lineH = 9
             const blockH = lines.length * lineH
             const startY = rowY + (rowH - blockH) / 2 + 3
             lines.forEach((l, li) => {
-              drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 7, font: fontR, color: rgb(0.12,0.12,0.15) })
+              drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 6.5, font: fontR, color: col.key === 'link' ? rgb(0.15,0.35,0.75) : rgb(0.12,0.12,0.15) })
             })
           }
 
