@@ -676,6 +676,7 @@ function fromDbProyectoArmar(row) {
     avanceTotal:                 row.avance_total                  ?? 0,
     documentacion:               row.documentacion                 ?? null,
     compras:                     row.compras                       ?? null,
+    contrataciones:              row.contrataciones                ?? [],
   }
 }
 
@@ -703,6 +704,7 @@ function toDbProyectoArmar(p) {
     avance_total:                p.avanceTotal                   ?? 0,
     documentacion:               p.documentacion                 ?? null,
     compras:                     p.compras                       ?? null,
+    contrataciones:              p.contrataciones                ?? [],
   }
 }
 
@@ -827,6 +829,7 @@ function fromDbCalendarioEvento(row) {
     descripcion:     row.descripcion || '',
     fecha:           row.fecha || '',
     estado:          row.estado || 'pendiente',
+    color:           row.color || null,
   }
 }
 
@@ -842,6 +845,7 @@ function toDbCalendarioEvento(e) {
     descripcion:       e.descripcion || '',
     fecha:             e.fecha || null,
     estado:            e.estado || 'pendiente',
+    color:             e.color || null,
   }
   if (e.id) out.id = e.id
   return out

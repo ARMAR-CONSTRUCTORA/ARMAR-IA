@@ -233,7 +233,7 @@ function Dashboard({
       <div style={{ display: 'grid', gridTemplateColumns: kpiCols, gap }}>
         <MetricCard icon="📋" value={kpiProyectos}    label="Proyectos activos"        color={blue}      bg={blueLight}   onClick={() => nav('proyectos')}   />
         <MetricCard icon="🏗️" value={kpiObras}         label="Obras activas"            color={orange}    bg={orangeLight} onClick={() => nav('obras')}       />
-        <MetricCard icon="💰" value={kpiPresupuestos}  label="Presupuestos pendientes"  color={'#D97706'} bg={'#FEF3C7'}   onClick={() => nav('presupuestos')} />
+        {/* MetricCard presupuestos desactivado */}
         <MetricCard icon="📄" value={kpiCerts}         label="Certificados pendientes"  color={green}     bg={greenLight}  onClick={() => nav('cronogramas')} />
         <MetricCard icon="⚠️" value={kpiCertsVencidos} label="Certificados vencidos"    color={kpiCertsVencidos > 0 ? red : mid} bg={kpiCertsVencidos > 0 ? redLight : '#F3F4F6'} onClick={() => nav('cronogramas')} />
         <MetricCard icon="📅" value={kpiHitos}         label="Hitos próx. 7 días"       color={red}       bg={redLight}    onClick={() => nav('calendario')}  />
@@ -306,31 +306,7 @@ function Dashboard({
       {/* ── Fila inferior — 2 columnas ── */}
       <div style={{ display: 'grid', gridTemplateColumns: botCols, gap, alignItems: 'start' }}>
 
-        {/* Presupuestos recientes */}
-        <SectionCard title="Presupuestos recientes" onVerTodas={() => nav('presupuestos')}>
-          {presupRecientes.length === 0
-            ? <EmptyRow msg="Sin presupuestos" />
-            : presupRecientes.map((pr, i) => {
-              const obra = projects.find(p => p.id === pr.proyectoId)
-              const meta = PRESUP_META[pr.estadoVersion] || PRESUP_META.borrador
-              const nombre = obra?.name || `Presupuesto ${typeof pr.id === 'string' ? pr.id.slice(0, 8) : pr.id}`
-              return (
-                <div key={pr.id}>
-                  <div style={{ padding: '10px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: dark, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
-                      {pr.fechaCreacion && (
-                        <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 1 }}>{fmtCorta(pr.fechaCreacion)}</div>
-                      )}
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, background: meta.bg, padding: '3px 10px', borderRadius: 99, flexShrink: 0 }}>{meta.label}</span>
-                  </div>
-                  {i < presupRecientes.length - 1 && <RowDivider />}
-                </div>
-              )
-            })
-          }
-        </SectionCard>
+        {/* Sección presupuestos desactivada */}
 
         {/* Mini calendario */}
         <CalendarioTab compact eventos={calendarioEventos} />

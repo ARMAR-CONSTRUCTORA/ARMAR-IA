@@ -14,7 +14,7 @@ const NAV_GROUPS = [
     label: 'Gestión',
     items: [
       { id: 'cronogramas',  label: 'Cronogramas',  icon: '📋' },
-      { id: 'presupuestos', label: 'Presupuestos', icon: '💰' },
+      // { id: 'presupuestos', label: 'Presupuestos', icon: '💰' }, // desactivado
       { id: 'equipo',       label: 'Equipo',       icon: '👥' },
       { id: 'calendario',   label: 'Calendario',   icon: '📅' },
     ],
