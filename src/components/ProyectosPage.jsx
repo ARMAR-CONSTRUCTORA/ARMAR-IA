@@ -2135,11 +2135,18 @@ function TablaContrataciones({ contratacionesData, isEditor, proyId, proyNombre,
   const [lista, setLista] = useState(() => Array.isArray(contratacionesData) ? contratacionesData : [])
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const dirtyRef = useRef(false)
+
+  // Sync from parent when not editing (covers both tab-switch remounts and async save completion)
+  useEffect(() => {
+    if (!dirtyRef.current) {
+      setLista(Array.isArray(contratacionesData) ? contratacionesData : [])
+    }
+  }, [contratacionesData])
 
   useEffect(() => {
-    setLista(Array.isArray(contratacionesData) ? contratacionesData : [])
-    setDirty(false)
-  }, [proyId])
+    dirtyRef.current = dirty
+  }, [dirty])
 
   const update = (id, patch) => {
     setLista(prev => prev.map(c => c.id === id ? { ...c, ...patch } : c))
@@ -2159,8 +2166,12 @@ function TablaContrataciones({ contratacionesData, isEditor, proyId, proyNombre,
   const handleSave = async () => {
     setSaving(true)
     try {
-      await onSave(lista)
+      const savedLista = await onSave(lista)
+      if (savedLista) setLista(savedLista)
       setDirty(false)
+    } catch (e) {
+      console.error('Error guardando contrataciones:', e)
+      alert('Error al guardar. Revisá la consola.')
     } finally {
       setSaving(false)
     }
@@ -2577,7 +2588,9 @@ function ProyectosPage({ isEditor, projects, cronogramas, onCrearObra, onVincula
       if (saved) newLista[i] = { ...c, calEventId: saved.id }
     }
     const updated = await upsertProyectoArmar({ ...proy, contrataciones: newLista })
-    if (updated) setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
+    if (!updated) { console.error('handleSaveContrataciones: upsert returned null'); return null }
+    setProyectos(prev => prev.map(p => p.id === updated.id ? updated : p))
+    return updated.contrataciones
   }
 
   const handleUpdateItem = async (item) => {
