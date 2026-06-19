@@ -1749,7 +1749,39 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     setDirty(true)
   }
 
+  // Renumera todos los ítems y subítems respetando la jerarquía
+  const renumerarRows = (rowList) => {
+    let mainN = 0, subN = 0
+    return rowList.map(row => {
+      if (isComprasHeader(row)) { mainN = 0; subN = 0; return row }
+      const isSub = /^\d+\.\d/.test(String(row.item || '').trim())
+      if (isSub) {
+        subN++
+        return { ...row, item: `${mainN}.${subN}` }
+      } else {
+        mainN++; subN = 0
+        return { ...row, item: String(mainN) }
+      }
+    })
+  }
+
   const addRow = () => { setRows(prev => [...prev, newComprasRow()]); setDirty(true) }
+
+  // Inserta una fila debajo de `ri` y renumera
+  const insertRowAfter = (ri) => {
+    setRows(prev => {
+      const next = [...prev]
+      const prevRow = prev[ri]
+      const prevItem = String(isComprasHeader(prevRow) ? '' : (prevRow?.item || '')).trim()
+      const isSub = /^\d+\.\d/.test(prevItem)
+      next.splice(ri + 1, 0, { ...newComprasRow(), item: isSub ? '0.0' : '0' })
+      return renumerarRows(next)
+    })
+    setDirty(true)
+  }
+
+  const renumerar = () => { setRows(prev => renumerarRows(prev)); setDirty(true) }
+
   const deleteRow = (ri) => { setRows(prev => prev.filter((_, i) => i !== ri)); setDirty(true) }
   const clearAll = () => { if (window.confirm('¿Eliminar el listado completo?')) { setRows([]); setDirty(true) } }
 
@@ -1787,6 +1819,12 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               + Fila
             </button>
+            {!isEmpty && (
+              <button onClick={renumerar}
+                style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                # Renumerar
+              </button>
+            )}
             {!isEmpty && (
               <button onClick={clearAll}
                 style={{ padding: '6px 12px', borderRadius: 7, border: '1px solid #FCA5A5', background: 'white', color: red, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -1964,9 +2002,12 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       )
                     })}
                     {editing && (
-                      <td style={{ textAlign: 'center', padding: 3, borderRight: 'none' }}>
+                      <td style={{ textAlign: 'center', padding: 3, borderRight: 'none', whiteSpace: 'nowrap' }}>
+                        <button onClick={() => insertRowAfter(ri)}
+                          title="Insertar fila debajo"
+                          style={{ border: 'none', background: 'none', color: green, cursor: 'pointer', fontSize: 14, padding: '0 3px', fontWeight: 700 }}>＋</button>
                         <button onClick={() => deleteRow(ri)}
-                          style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 12, padding: 0 }}>🗑</button>
+                          style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 12, padding: '0 3px' }}>🗑</button>
                       </td>
                     )}
                   </tr>
