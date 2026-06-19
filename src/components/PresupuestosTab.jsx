@@ -8,6 +8,7 @@ import {
   actualizarItem,
   eliminarItem,
   eliminarCapitulo,
+  reordenarItems,
   updatePresupuestoEstado,
   vincularPresupuestoAProyecto,
   loadChecklistItems,
@@ -123,7 +124,7 @@ const s = {
   capNum: { width: 28, height: 28, borderRadius: 7, background: orangeLight, color: orange, fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" },
   capNombre: { flex: 1, fontSize: 14, fontWeight: 600 },
   tableWrap: { overflowX: "auto" },
-  table: { width: "100%", minWidth: 1180, borderCollapse: "collapse" },
+  table: { width: "100%", minWidth: 1200, borderCollapse: "collapse" },
   th: { padding: "8px 10px", fontSize: 10, fontWeight: 700, color: "#999", textTransform: "uppercase", background: "#FAFAF9", textAlign: "left", borderBottom: `1px solid ${border}` },
   thR: { padding: "8px 10px", fontSize: 10, fontWeight: 700, color: "#999", textTransform: "uppercase", background: "#FAFAF9", textAlign: "right", borderBottom: `1px solid ${border}` },
   td: { padding: "8px 10px", fontSize: 12, color: mid, borderBottom: `1px solid ${border}` },
@@ -175,12 +176,13 @@ function mapDBPresupuesto(data) {
             etapaId: it.etapaId || it.etapa_id || null,
             tareaId: it.tareaId || it.tarea_id || null,
             hitoId: it.hitoId || it.hito_id || null,
+            orden: Number(it.orden ?? 0),
           })),
       })),
   };
 }
 
-function ItemRow({ item, onUpdate, onDelete }) {
+function ItemRow({ item, numero, onUpdate, onDelete, onInsertAfter }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item);
 
@@ -209,6 +211,7 @@ function ItemRow({ item, onUpdate, onDelete }) {
   if (editing) {
     return (
       <tr style={{ background: orangeLight }}>
+        <td style={{ ...s.td, color: "#bbb", fontWeight: 700, fontSize: 11, whiteSpace: "nowrap" }}>{numero}</td>
         <td style={s.td}>
           <input style={s.input} value={draft.descripcion} onChange={(e) => updateDraft("descripcion", e.target.value)} />
         </td>
@@ -260,6 +263,7 @@ function ItemRow({ item, onUpdate, onDelete }) {
 
   return (
     <tr>
+      <td style={{ ...s.td, color: "#bbb", fontWeight: 700, fontSize: 11, whiteSpace: "nowrap" }}>{numero}</td>
       <td style={s.td}>{item.descripcion}</td>
       <td style={s.td}>{item.unidad}</td>
       <td style={s.tdR}>{Number(item.cantidad || 0).toLocaleString("es-AR")}</td>
@@ -274,6 +278,13 @@ function ItemRow({ item, onUpdate, onDelete }) {
         <span style={s.badge(green, "#EBF7F1")}>{item.estadoItem}</span>
       </td>
       <td style={{ ...s.td, textAlign: "right", whiteSpace: "nowrap" }}>
+        <button
+          style={{ ...s.btnIcon, color: green, fontWeight: 700, fontSize: 16 }}
+          title="Insertar ítem debajo"
+          onClick={() => onInsertAfter(item.id)}
+        >
+          ＋
+        </button>
         <button style={s.btnIcon} onClick={() => setEditing(true)}>✏️</button>
         <button style={s.btnIcon} onClick={() => onDelete(item.id)}>🗑️</button>
       </td>
@@ -281,7 +292,7 @@ function ItemRow({ item, onUpdate, onDelete }) {
   );
 }
 
-function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAddItem }) {
+function Capitulo({ cap, capNum, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAddItem, onInsertAfter }) {
   const [open, setOpen] = useState(true);
   const t = calcTotalesCapitulo(cap);
   const margenPct = t.cliente > 0 ? (t.margen / t.cliente) * 100 : 0;
@@ -289,7 +300,7 @@ function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAd
   return (
     <div style={s.capitulo}>
       <div style={s.capHeader} onClick={() => setOpen(!open)}>
-        <div style={s.capNum}>{idx + 1}</div>
+        <div style={s.capNum}>{capNum}</div>
         <div style={s.capNombre}>{cap.nombre}</div>
         <strong style={{ color: green }}>{formatMoney(t.costoDirecto)}</strong>
         <strong style={{ color: orange }}>{formatMoney(t.cliente)}</strong>
@@ -313,6 +324,7 @@ function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAd
             <table style={s.table}>
               <thead>
                 <tr>
+                  <th style={{ ...s.th, width: 48 }}>#</th>
                   <th style={s.th}>Descripción</th>
                   <th style={s.th}>Unidad</th>
                   <th style={s.thR}>Cantidad</th>
@@ -329,12 +341,14 @@ function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAd
               </thead>
 
               <tbody>
-                {(cap.items || []).map((item) => (
+                {(cap.items || []).map((item, itemIdx) => (
                   <ItemRow
                     key={item.id}
                     item={item}
+                    numero={`${capNum}.${itemIdx + 1}`}
                     onUpdate={onUpdateItem}
                     onDelete={onDeleteItem}
+                    onInsertAfter={(itemId) => onInsertAfter(cap.id, itemId)}
                   />
                 ))}
               </tbody>
@@ -343,7 +357,7 @@ function Capitulo({ cap, idx, onUpdateItem, onDeleteItem, onDeleteCapitulo, onAd
 
           <div style={{ padding: "8px 16px 12px" }}>
             <button style={s.btnAdd} onClick={() => onAddItem(cap.id)}>
-              + Agregar ítem
+              + Agregar ítem al final
             </button>
           </div>
         </>
@@ -407,6 +421,8 @@ export default function PresupuestosTab({ proyecto, proyectosArmar, isEditor }) 
   }
 
   async function handleAddItem(capituloId) {
+    const cap = capitulos.find(c => c.id === capituloId);
+    const orden = (cap?.items || []).length;
     await guardarItem(capituloId, {
       descripcion: "Nuevo ítem",
       unidad: "GLOBAL",
@@ -419,7 +435,40 @@ export default function PresupuestosTab({ proyecto, proyectosArmar, isEditor }) 
       costoPresupuestado: 0,
       moneda: "ARS",
       estadoItem: "previsto",
+      orden,
     });
+    await cargar();
+  }
+
+  async function handleInsertAfter(capituloId, afterItemId) {
+    const cap = capitulos.find(c => c.id === capituloId);
+    const items = cap?.items || [];
+    const afterIdx = items.findIndex(it => it.id === afterItemId);
+
+    // Build new ordered list with a slot for the new item
+    // Items before and including afterIdx keep their index; items after shift up by 1
+    const reordenar = items.map((it, idx) => ({
+      id: it.id,
+      orden: idx <= afterIdx ? idx : idx + 1,
+    }));
+    await reordenarItems(reordenar);
+
+    // Insert new item at afterIdx + 1
+    await guardarItem(capituloId, {
+      descripcion: "Nuevo ítem",
+      unidad: "GLOBAL",
+      cantidad: 1,
+      costoDirectoUnitario: 0,
+      indirectosPct: 0,
+      riesgoPct: 0,
+      utilidadPct: 0,
+      precioCliente: 0,
+      costoPresupuestado: 0,
+      moneda: "ARS",
+      estadoItem: "previsto",
+      orden: afterIdx + 1,
+    });
+
     await cargar();
   }
 
@@ -604,11 +653,12 @@ export default function PresupuestosTab({ proyecto, proyectosArmar, isEditor }) 
           <Capitulo
             key={cap.id}
             cap={cap}
-            idx={idx}
+            capNum={idx + 1}
             onUpdateItem={handleUpdateItem}
             onDeleteItem={handleDeleteItem}
             onDeleteCapitulo={handleDeleteCapitulo}
             onAddItem={handleAddItem}
+            onInsertAfter={handleInsertAfter}
           />
         ))}
       </div>

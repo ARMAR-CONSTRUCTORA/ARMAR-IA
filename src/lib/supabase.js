@@ -466,6 +466,15 @@ export async function eliminarItem(itemId) {
   if (error) console.error('eliminarItem:', error)
 }
 
+export async function reordenarItems(updates) {
+  // updates: [{ id, orden }, ...]
+  await Promise.all(
+    updates.map(({ id, orden }) =>
+      supabase.from('presupuesto_items').update({ orden }).eq('id', id)
+    )
+  )
+}
+
 // ── Contrataciones cliente ────────────────────────────────────────────────────
 
 export async function guardarContratacionCliente(presupuestoId, item) {
