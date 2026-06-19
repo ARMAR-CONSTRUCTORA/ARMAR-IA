@@ -1205,7 +1205,7 @@ const COMPRAS_COLS = [
 ]
 
 function newComprasRow() {
-  return { item:'', foto:'', ubicacion:'', categoria:'', marca:'', modelo:'', unidad:'', cant:'', cajasUn:'', definido:false, fechaDefinicion:'', comprado:false, fechaEntrega:'', fechaLimite:'', link:'', precioUn:'', observaciones:'' }
+  return { item:'', foto:'', ubicacion:'', categoria:'', marca:'', modelo:'', unidad:'', cant:'', cajasUn:'', definido:false, fechaDefinicion:'', comprado:false, fechaEntrega:'', fechaLimite:'', link:'', precioUn:'', observaciones:'', _bold: false, _underline: false }
 }
 
 function isComprasHeader(row) {
@@ -1266,6 +1266,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const [exportando,          setExportando]          = useState(false)
   const [exportandoRellenable, setExportandoRellenable] = useState(false)
   const [colWidths, setColWidths] = useState(() => Object.fromEntries(COMPRAS_COLS.map(c => [c.key, c.w])))
+  const [confirmDelete, setConfirmDelete] = useState(null)
   const fileRefs = useRef({})
   const editing = isEditor && editMode
 
@@ -1749,19 +1750,16 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     setDirty(true)
   }
 
-  // Renumera todos los ítems y subítems respetando la jerarquía
+  // Renumera todos los ítems y subítems usando el número del capítulo como prefijo
   const renumerarRows = (rowList) => {
-    let mainN = 0, subN = 0
+    let capN = 0, subN = 0
     return rowList.map(row => {
-      if (isComprasHeader(row)) { mainN = 0; subN = 0; return row }
-      const isSub = /^\d+\.\d/.test(String(row.item || '').trim())
-      if (isSub) {
-        subN++
-        return { ...row, item: `${mainN}.${subN}` }
-      } else {
-        mainN++; subN = 0
-        return { ...row, item: String(mainN) }
+      if (isComprasHeader(row)) {
+        capN++; subN = 0
+        return { ...row, item: String(capN) }
       }
+      subN++
+      return { ...row, item: `${capN}.${subN}` }
     })
   }
 
@@ -1782,7 +1780,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
 
   const renumerar = () => { setRows(prev => renumerarRows(prev)); setDirty(true) }
 
-  const deleteRow = (ri) => { setRows(prev => prev.filter((_, i) => i !== ri)); setDirty(true) }
+  const deleteRow = (ri) => { setRows(prev => prev.filter((_, i) => i !== ri)); setDirty(true); setConfirmDelete(null) }
   const clearAll = () => { if (window.confirm('¿Eliminar el listado completo?')) { setRows([]); setDirty(true) } }
 
   const handleImageUpload = async (ri, file) => {
@@ -1989,14 +1987,15 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       const isItemCol = col.key === 'item'
                       const isCatCol  = col.key === 'categoria'
                       const textColor = isHeader ? 'white' : dark
-                      const fontW     = isHeader && (isItemCol || isCatCol) ? 800 : 400
+                      const fontW     = (isHeader && (isItemCol || isCatCol)) || row._bold ? 800 : 400
+                      const textDeco  = row._underline ? 'underline' : 'none'
                       return (
                         <td key={col.key} style={{ ...cellStyle, textAlign: isNum ? 'right' : 'left' }}>
                           {editing ? (
                             <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
-                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
+                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, textDecoration: textDeco, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
                           ) : (
-                            <span style={{ color: textColor, fontWeight: fontW }}>{val}</span>
+                            <span style={{ color: textColor, fontWeight: fontW, textDecoration: textDeco }}>{val}</span>
                           )}
                         </td>
                       )
@@ -2006,7 +2005,15 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                         <button onClick={() => insertRowAfter(ri)}
                           title="Insertar fila debajo"
                           style={{ border: 'none', background: 'none', color: green, cursor: 'pointer', fontSize: 14, padding: '0 3px', fontWeight: 700 }}>＋</button>
-                        <button onClick={() => deleteRow(ri)}
+                        <button
+                          title="Negrita"
+                          onClick={() => updateRow(ri, '_bold', !row._bold)}
+                          style={{ border: 'none', background: row._bold ? '#1A1A1A' : 'none', color: row._bold ? 'white' : '#9CA3AF', cursor: 'pointer', fontSize: 11, padding: '1px 4px', borderRadius: 3, fontWeight: 700 }}>B</button>
+                        <button
+                          title="Subrayado"
+                          onClick={() => updateRow(ri, '_underline', !row._underline)}
+                          style={{ border: 'none', background: row._underline ? '#1A1A1A' : 'none', color: row._underline ? 'white' : '#9CA3AF', cursor: 'pointer', fontSize: 11, padding: '1px 4px', borderRadius: 3, textDecoration: 'underline' }}>U</button>
+                        <button onClick={() => setConfirmDelete(ri)}
                           style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 12, padding: '0 3px' }}>🗑</button>
                       </td>
                     )}
@@ -2015,6 +2022,29 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Modal confirmación eliminar fila */}
+      {confirmDelete !== null && (
+        <div onClick={() => setConfirmDelete(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: 14, padding: '28px 32px', maxWidth: 340, width: '90%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)', textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🗑️</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: dark, marginBottom: 8 }}>¿Eliminar esta fila?</div>
+            <div style={{ fontSize: 13, color: '#6B7280', marginBottom: 24 }}>Esta acción no se puede deshacer.</div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button onClick={() => setConfirmDelete(null)}
+                style={{ padding: '8px 20px', borderRadius: 8, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancelar
+              </button>
+              <button onClick={() => deleteRow(confirmDelete)}
+                style={{ padding: '8px 20px', borderRadius: 8, border: 'none', background: red, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Eliminar
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
