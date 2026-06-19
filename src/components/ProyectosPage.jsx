@@ -2021,7 +2021,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                               contentEditable
                               suppressContentEditableWarning
                               dangerouslySetInnerHTML={{ __html: val }}
-                              onInput={e => updateRow(ri, col.key, e.currentTarget.innerHTML)}
+                              onBlur={e => updateRow(ri, col.key, e.currentTarget.innerHTML)}
                               style={{ minWidth: 20, outline: 'none', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', cursor: 'text', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                             />
                           ) : (
