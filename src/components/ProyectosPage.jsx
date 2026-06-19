@@ -1213,6 +1213,10 @@ function isComprasHeader(row) {
   return /^\d+$/.test(item) && !row.marca && !row.modelo && !row.cant
 }
 
+function stripHtml(str) {
+  return String(str || '').replace(/<[^>]*>/g, '')
+}
+
 function calcTot(row) {
   const p = parseFloat(String(row.precioUn).replace(/\./g,'').replace(',','.')) || 0
   const q = parseFloat(String(row.cajasUn).replace(',','.')) || 0
@@ -1431,7 +1435,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
           }
 
           // Texto normal
-          const txt = String(raw)
+          const txt = stripHtml(raw)
           if (!txt) { x += w; return }
           const maxW = w - 3
           const lines = doc.splitTextToSize(txt, maxW)
@@ -1704,7 +1708,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               drawTextSafe(l, { x: x + 3, y: startY + (lines.length - 1 - li) * lineH, size: 6.5, font: fontR, color: rgb(0.12,0.12,0.15) })
             })
           } else {
-            const displayVal = col.key === 'link' ? (val ? 'Ver link' : '') : String(val)
+            const displayVal = col.key === 'link' ? (val ? 'Ver link' : '') : stripHtml(val)
             const lines = wrapText(displayVal, w, 6.5, fontR)
             const lineH = 9
             const blockH = lines.length * lineH
@@ -1817,6 +1821,14 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               + Fila
             </button>
+            <button
+              title="Negrita (seleccioná texto primero)"
+              onMouseDown={e => { e.preventDefault(); document.execCommand('bold') }}
+              style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>B</button>
+            <button
+              title="Subrayado (seleccioná texto primero)"
+              onMouseDown={e => { e.preventDefault(); document.execCommand('underline') }}
+              style={{ padding: '5px 10px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 13, fontWeight: 400, cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>U</button>
             {!isEmpty && (
               <button onClick={renumerar}
                 style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -1987,15 +1999,36 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                       const isItemCol = col.key === 'item'
                       const isCatCol  = col.key === 'categoria'
                       const textColor = isHeader ? 'white' : dark
-                      const fontW     = (isHeader && (isItemCol || isCatCol)) || row._bold ? 800 : 400
-                      const textDeco  = row._underline ? 'underline' : 'none'
+                      const fontW     = isHeader && (isItemCol || isCatCol) ? 800 : 400
+                      // Celdas de texto plano (número, precio, item) usan input normal
+                      if (isNum || isItemCol) {
+                        return (
+                          <td key={col.key} style={{ ...cellStyle, textAlign: isNum ? 'right' : 'left' }}>
+                            {editing ? (
+                              <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
+                                style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
+                            ) : (
+                              <span style={{ color: textColor, fontWeight: fontW }}>{val}</span>
+                            )}
+                          </td>
+                        )
+                      }
+                      // Celdas de texto enriquecido — contentEditable para formato por selección
                       return (
-                        <td key={col.key} style={{ ...cellStyle, textAlign: isNum ? 'right' : 'left' }}>
+                        <td key={col.key} style={{ ...cellStyle, textAlign: 'left' }}>
                           {editing ? (
-                            <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
-                              style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, textDecoration: textDeco, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
+                            <div
+                              contentEditable
+                              suppressContentEditableWarning
+                              dangerouslySetInnerHTML={{ __html: val }}
+                              onInput={e => updateRow(ri, col.key, e.currentTarget.innerHTML)}
+                              style={{ minWidth: 20, outline: 'none', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', cursor: 'text', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                            />
                           ) : (
-                            <span style={{ color: textColor, fontWeight: fontW, textDecoration: textDeco }}>{val}</span>
+                            <span
+                              style={{ color: textColor, fontWeight: fontW }}
+                              dangerouslySetInnerHTML={{ __html: val }}
+                            />
                           )}
                         </td>
                       )
@@ -2005,14 +2038,6 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                         <button onClick={() => insertRowAfter(ri)}
                           title="Insertar fila debajo"
                           style={{ border: 'none', background: 'none', color: green, cursor: 'pointer', fontSize: 14, padding: '0 3px', fontWeight: 700 }}>＋</button>
-                        <button
-                          title="Negrita"
-                          onClick={() => updateRow(ri, '_bold', !row._bold)}
-                          style={{ border: 'none', background: row._bold ? '#1A1A1A' : 'none', color: row._bold ? 'white' : '#9CA3AF', cursor: 'pointer', fontSize: 11, padding: '1px 4px', borderRadius: 3, fontWeight: 700 }}>B</button>
-                        <button
-                          title="Subrayado"
-                          onClick={() => updateRow(ri, '_underline', !row._underline)}
-                          style={{ border: 'none', background: row._underline ? '#1A1A1A' : 'none', color: row._underline ? 'white' : '#9CA3AF', cursor: 'pointer', fontSize: 11, padding: '1px 4px', borderRadius: 3, textDecoration: 'underline' }}>U</button>
                         <button onClick={() => setConfirmDelete(ri)}
                           style={{ border: 'none', background: 'none', color: '#D1D5DB', cursor: 'pointer', fontSize: 12, padding: '0 3px' }}>🗑</button>
                       </td>
