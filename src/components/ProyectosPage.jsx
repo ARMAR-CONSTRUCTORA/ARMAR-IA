@@ -1288,12 +1288,20 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     try {
       const { jsPDF } = await import('jspdf')
 
-      // Pre-fetch imágenes
+      // Pre-fetch imágenes con dimensiones naturales
       const imgCache = {}
       for (const row of rows) {
         if (row.foto && !imgCache[row.foto]) {
           const b64 = await fetchImageBase64(row.foto)
-          if (b64) imgCache[row.foto] = b64
+          if (b64) {
+            const size = await new Promise(res => {
+              const tmp = new Image()
+              tmp.onload = () => res({ natW: tmp.naturalWidth, natH: tmp.naturalHeight })
+              tmp.onerror = () => res({ natW: 1, natH: 1 })
+              tmp.src = b64
+            })
+            imgCache[row.foto] = { b64, natW: size.natW, natH: size.natH }
+          }
         }
       }
 
@@ -1397,10 +1405,17 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
           doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(30,30,30)
 
           if (col.type === 'imagen') {
-            const b64 = imgCache[raw]
-            if (b64) {
-              const imgW = w - 2, imgH = rowH - 2
-              try { doc.addImage(b64, x + 1, y + 1, imgW, imgH, undefined, 'FAST') } catch {}
+            const cached = imgCache[raw]
+            if (cached) {
+              const { b64, natW, natH } = cached
+              const maxW = w - 4, maxH = rowH - 4
+              const ratio = natW / natH
+              let imgW, imgH
+              if (ratio > maxW / maxH) { imgW = maxW; imgH = maxW / ratio }
+              else                      { imgH = maxH; imgW = maxH * ratio }
+              const imgX = x + (w - imgW) / 2
+              const imgY = y + (rowH - imgH) / 2
+              try { doc.addImage(b64, imgX, imgY, imgW, imgH, undefined, 'FAST') } catch {}
             }
             x += w; return
           }
@@ -1430,6 +1445,15 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             if (tot) {
               doc.setFont('helvetica', 'bold')
               doc.text(tot, x + w - 1.5, y + rowH / 2 + 2, { align: 'right' })
+            }
+            x += w; return
+          }
+
+          if (col.key === 'precioUn') {
+            const p = parseFloat(String(raw).replace(/\./g,'').replace(',','.')) || 0
+            if (p) {
+              doc.setFont('helvetica', 'normal')
+              doc.text('$ ' + Math.round(p).toLocaleString('es-AR'), x + w - 1.5, y + rowH / 2 + 2, { align: 'right' })
             }
             x += w; return
           }
@@ -2008,7 +2032,11 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                               <input value={val} onChange={e => updateRow(ri, col.key, e.target.value)}
                                 style={{ width: '100%', border: 'none', background: 'transparent', fontSize: 11, color: textColor, fontWeight: fontW, fontFamily: 'inherit', outline: 'none', textAlign: isNum ? 'right' : 'left' }} />
                             ) : (
-                              <span style={{ color: textColor, fontWeight: fontW }}>{val}</span>
+                              <span style={{ color: textColor, fontWeight: fontW }}>
+                                {col.type === 'precio' && val
+                                  ? '$ ' + Math.round(parseFloat(String(val).replace(/\./g,'').replace(',','.')) || 0).toLocaleString('es-AR')
+                                  : val}
+                              </span>
                             )}
                           </td>
                         )
