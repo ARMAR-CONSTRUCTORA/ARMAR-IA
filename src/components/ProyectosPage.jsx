@@ -1227,7 +1227,12 @@ function parseHtmlSegments(html) {
       if (node.textContent) segs.push({ text: node.textContent, bold, underline })
     } else if (node.nodeType === 1) {
       const t = node.tagName.toLowerCase()
-      node.childNodes.forEach(c => walk(c, bold || t === 'b' || t === 'strong', underline || t === 'u'))
+      const st = node.style || {}
+      const fw = st.fontWeight || ''
+      const td = st.textDecoration || ''
+      const isBold = bold || t === 'b' || t === 'strong' || fw === 'bold' || fw === '700' || fw === '800'
+      const isUnderline = underline || t === 'u' || td === 'underline' || td.includes('underline')
+      node.childNodes.forEach(c => walk(c, isBold, isUnderline))
     }
   }
   walk(el, false, false)
