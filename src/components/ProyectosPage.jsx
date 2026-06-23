@@ -1460,8 +1460,11 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             const display = raw
               ? new Date(raw + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
               : 'DD/MM/AAAA'
+            const isLimite = col.key === 'fechaLimite'
+            doc.setFont('helvetica', isLimite ? 'bold' : 'normal')
             doc.setTextColor(raw ? 30 : 180, 30, raw ? 30 : 180)
             doc.text(display, x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+            doc.setFont('helvetica', 'normal')
             doc.setTextColor(30, 30, 30)
             x += w; return
           }
