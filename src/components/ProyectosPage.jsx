@@ -1239,46 +1239,64 @@ function parseHtmlSegments(html) {
   return segs
 }
 
-// Renderiza texto enriquecido en jsPDF respetando negrita y subrayado
-function renderRichText(doc, html, x, ty, maxW, align, fontSize = 6.5) {
+// Renderiza texto enriquecido en jsPDF con word-wrap y respetando negrita/subrayado
+function renderRichText(doc, html, colX, cellY, cellH, maxW, align, fontSize = 6.5) {
   const segs = parseHtmlSegments(html)
   if (!segs.length) return
   doc.setFontSize(fontSize)
 
-  if (align === 'right') {
-    // Medimos el ancho total para alinear a la derecha
-    const totalW = segs.reduce((acc, s) => {
-      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
-      return acc + doc.getTextWidth(s.text)
-    }, 0)
-    let cx = x - totalW
-    segs.forEach(s => {
-      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
-      doc.text(s.text, cx, ty)
-      if (s.underline) { const w = doc.getTextWidth(s.text); doc.setLineWidth(0.2); doc.line(cx, ty + 0.8, cx + w, ty + 0.8) }
-      cx += doc.getTextWidth(s.text)
+  // Dividir segmentos en tokens (palabras + espacios), preservando formato
+  const tokens = []
+  segs.forEach(seg => {
+    seg.text.split(/(\s+)/).forEach(part => {
+      if (part) tokens.push({ text: part, bold: seg.bold, underline: seg.underline })
     })
-  } else if (align === 'center') {
-    const totalW = segs.reduce((acc, s) => {
-      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
-      return acc + doc.getTextWidth(s.text)
-    }, 0)
-    let cx = x - totalW / 2
-    segs.forEach(s => {
-      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
-      doc.text(s.text, cx, ty)
-      if (s.underline) { const w = doc.getTextWidth(s.text); doc.setLineWidth(0.2); doc.line(cx, ty + 0.8, cx + w, ty + 0.8) }
-      cx += doc.getTextWidth(s.text)
+  })
+
+  // Construir líneas con word-wrap
+  const lines = [] // cada línea: array de tokens
+  let line = [], lineW = 0
+  tokens.forEach(tok => {
+    doc.setFont('helvetica', tok.bold ? 'bold' : 'normal')
+    const tw = doc.getTextWidth(tok.text)
+    if (lineW + tw > maxW && line.length && tok.text.trim()) {
+      lines.push(line); line = [tok]; lineW = tw
+    } else {
+      line.push(tok); lineW += tw
+    }
+  })
+  if (line.length) lines.push(line)
+
+  const show  = lines.slice(0, 2) // máximo 2 líneas como antes
+  const lineH = fontSize * 0.352 + 0.7
+  const blockH = show.length * lineH
+  const startY = cellY + (cellH - blockH) / 2 + lineH * 0.75
+
+  // Función para medir el ancho total de una línea
+  const lineWidth = (ln) => ln.reduce((acc, tok) => {
+    doc.setFont('helvetica', tok.bold ? 'bold' : 'normal')
+    return acc + doc.getTextWidth(tok.text)
+  }, 0)
+
+  show.forEach((ln, li) => {
+    const ty = startY + li * lineH
+    let startX
+    if (align === 'right')       startX = colX - lineWidth(ln)
+    else if (align === 'center') startX = colX - lineWidth(ln) / 2
+    else                         startX = colX
+
+    let cx = startX
+    ln.forEach(tok => {
+      doc.setFont('helvetica', tok.bold ? 'bold' : 'normal')
+      doc.text(tok.text, cx, ty)
+      if (tok.underline) {
+        const tw = doc.getTextWidth(tok.text)
+        doc.setLineWidth(0.2)
+        doc.line(cx, ty + 0.8, cx + tw, ty + 0.8)
+      }
+      cx += doc.getTextWidth(tok.text)
     })
-  } else {
-    let cx = x
-    segs.forEach(s => {
-      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
-      doc.text(s.text, cx, ty)
-      if (s.underline) { const w = doc.getTextWidth(s.text); doc.setLineWidth(0.2); doc.line(cx, ty + 0.8, cx + w, ty + 0.8) }
-      cx += doc.getTextWidth(s.text)
-    })
-  }
+  })
   doc.setFont('helvetica', 'normal')
 }
 
@@ -1543,15 +1561,14 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             x += w; return
           }
 
-          // Texto enriquecido (respeta negrita y subrayado)
+          // Texto enriquecido (respeta negrita, subrayado y word-wrap)
           if (!stripHtml(raw)) { x += w; return }
-          const ty = y + rowH / 2 + 2
           if (col.align === 'right') {
-            renderRichText(doc, raw, x + w - 1.5, ty, w - 3, 'right')
+            renderRichText(doc, raw, x + w - 1.5, y, rowH, w - 3, 'right')
           } else if (col.align === 'center') {
-            renderRichText(doc, raw, x + w / 2, ty, w - 3, 'center')
+            renderRichText(doc, raw, x + w / 2, y, rowH, w - 3, 'center')
           } else {
-            renderRichText(doc, raw, x + 1.5, ty, w - 3, 'left')
+            renderRichText(doc, raw, x + 1.5, y, rowH, w - 3, 'left')
           }
           x += w
         })
