@@ -1224,22 +1224,25 @@ function calcTot(row) {
   return '$' + Math.round(p * q).toLocaleString('es-AR')
 }
 
-const PDF_COLS = [
-  { key: 'item',          label: 'Item',      w: 12, align: 'left' },
-  { key: 'foto',          label: 'Foto',      w: 24, align: 'center', type: 'imagen' },
-  { key: 'ubicacion',     label: 'Ubicación', w: 36, align: 'left' },
-  { key: 'categoria',     label: 'Categoría', w: 28, align: 'left' },
-  { key: 'marca',         label: 'Marca',     w: 20, align: 'left' },
-  { key: 'modelo',        label: 'Modelo',    w: 52, align: 'left' },
-  { key: 'unidad',        label: 'Un.',       w: 10, align: 'center' },
-  { key: 'cant',          label: 'Cant.',     w: 13, align: 'right' },
-  { key: 'cajasUn',       label: 'Cajas/Un.', w: 16, align: 'right' },
-  { key: 'definido',      label: 'Definido',  w: 15, align: 'center', type: 'check' },
-  { key: 'comprado',      label: 'Comprado',  w: 17, align: 'center', type: 'check' },
-  { key: 'link',          label: 'Link',      w: 12, align: 'center', type: 'link' },
-  { key: 'precioUn',      label: '$un.',      w: 22, align: 'right' },
-  { key: 'precioTot',     label: '$tot',      w: 22, align: 'right', type: 'calc' },
-  { key: 'observaciones', label: 'Obs.',      w: 29, align: 'left' },
+const ALL_PDF_COLS = [
+  { key: 'item',            label: 'Item',             w: 12, align: 'left',   fixed: true },
+  { key: 'foto',            label: 'Foto',             w: 24, align: 'center', type: 'imagen' },
+  { key: 'ubicacion',       label: 'Ubicación',        w: 36, align: 'left' },
+  { key: 'categoria',       label: 'Categoría',        w: 28, align: 'left' },
+  { key: 'marca',           label: 'Marca',            w: 20, align: 'left' },
+  { key: 'modelo',          label: 'Modelo',           w: 52, align: 'left' },
+  { key: 'unidad',          label: 'Un.',              w: 10, align: 'center' },
+  { key: 'cant',            label: 'Cant.',            w: 13, align: 'right' },
+  { key: 'cajasUn',         label: 'Cajas/Un.',        w: 16, align: 'right' },
+  { key: 'definido',        label: 'Definido',         w: 15, align: 'center', type: 'check' },
+  { key: 'fechaDefinicion', label: 'F. definición',    w: 22, align: 'center', type: 'date' },
+  { key: 'comprado',        label: 'Comprado',         w: 17, align: 'center', type: 'check' },
+  { key: 'fechaEntrega',    label: 'F. entrega',       w: 22, align: 'center', type: 'date' },
+  { key: 'fechaLimite',     label: 'Ingreso a Obra',   w: 25, align: 'center', type: 'date' },
+  { key: 'link',            label: 'Link',             w: 12, align: 'center', type: 'link' },
+  { key: 'precioUn',        label: '$un.',             w: 22, align: 'right' },
+  { key: 'precioTot',       label: '$tot',             w: 22, align: 'right',  type: 'calc' },
+  { key: 'observaciones',   label: 'Obs.',             w: 29, align: 'left' },
 ]
 
 async function fetchImageBase64(url) {
@@ -1267,8 +1270,10 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const [uploading,   setUploading]   = useState({})
   const [editMode,    setEditMode]    = useState(false)
   const [fotoModal,   setFotoModal]   = useState(null)
-  const [exportando,          setExportando]          = useState(false)
+  const [exportando,           setExportando]           = useState(false)
   const [exportandoRellenable, setExportandoRellenable] = useState(false)
+  const [exportSelector,       setExportSelector]       = useState(false)
+  const [selectedPdfCols,      setSelectedPdfCols]      = useState(() => new Set(ALL_PDF_COLS.map(c => c.key)))
   const [colWidths, setColWidths] = useState(() => Object.fromEntries(COMPRAS_COLS.map(c => [c.key, c.w])))
   const [confirmDelete, setConfirmDelete] = useState(null)
   const fileRefs = useRef({})
@@ -1283,15 +1288,17 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     window.addEventListener('mouseup', onUp)
   }
 
-  const exportarPDF = async () => {
+  const exportarPDF = async (colsSet) => {
     setExportando(true)
+    setExportSelector(false)
     try {
       const { jsPDF } = await import('jspdf')
+      const PDF_COLS = ALL_PDF_COLS.filter(c => colsSet.has(c.key))
 
       // Pre-fetch imágenes con dimensiones naturales
       const imgCache = {}
       for (const row of rows) {
-        if (row.foto && !imgCache[row.foto]) {
+        if (row.foto && !imgCache[row.foto] && colsSet.has('foto')) {
           const b64 = await fetchImageBase64(row.foto)
           if (b64) {
             const size = await new Promise(res => {
@@ -1446,6 +1453,16 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               doc.setFont('helvetica', 'bold')
               doc.text(tot, x + w - 1.5, y + rowH / 2 + 2, { align: 'right' })
             }
+            x += w; return
+          }
+
+          if (col.type === 'date') {
+            const display = raw
+              ? new Date(raw + 'T00:00:00').toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              : 'DD/MM/AAAA'
+            doc.setTextColor(raw ? 30 : 180, 30, raw ? 30 : 180)
+            doc.text(display, x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+            doc.setTextColor(30, 30, 30)
             x += w; return
           }
 
@@ -1875,7 +1892,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
         )}
         {!isEmpty && !editMode && (
           <>
-            <button onClick={exportarPDF} disabled={exportando}
+            <button onClick={() => setExportSelector(true)} disabled={exportando}
               style={{ padding: '6px 14px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: dark, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: exportando ? 0.7 : 1 }}>
               {exportando ? 'Generando PDF…' : '↓ Exportar PDF'}
             </button>
@@ -2075,6 +2092,47 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Modal selector de columnas PDF */}
+      {exportSelector && (
+        <div onClick={() => setExportSelector(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: 14, padding: '24px 28px', maxWidth: 420, width: '92%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: dark, marginBottom: 4 }}>Elegí los campos a exportar</div>
+            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>El campo "Item" siempre se incluye.</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 20 }}>
+              {ALL_PDF_COLS.filter(c => !c.fixed).map(col => (
+                <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: dark }}>
+                  <input
+                    type="checkbox"
+                    checked={selectedPdfCols.has(col.key)}
+                    onChange={() => {
+                      setSelectedPdfCols(prev => {
+                        const next = new Set(prev)
+                        next.has(col.key) ? next.delete(col.key) : next.add(col.key)
+                        return next
+                      })
+                    }}
+                    style={{ accentColor: orange, width: 15, height: 15 }}
+                  />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setExportSelector(false)}
+                style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancelar
+              </button>
+              <button onClick={() => exportarPDF(new Set([...selectedPdfCols, 'item']))}
+                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: orange, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                ↓ Exportar PDF
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
