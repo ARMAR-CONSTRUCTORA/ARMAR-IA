@@ -1217,6 +1217,66 @@ function stripHtml(str) {
   return String(str || '').replace(/<[^>]*>/g, '')
 }
 
+// Parsea HTML con <b>/<strong>/<u> y devuelve segmentos { text, bold, underline }
+function parseHtmlSegments(html) {
+  const el = document.createElement('div')
+  el.innerHTML = String(html || '')
+  const segs = []
+  function walk(node, bold, underline) {
+    if (node.nodeType === 3) {
+      if (node.textContent) segs.push({ text: node.textContent, bold, underline })
+    } else if (node.nodeType === 1) {
+      const t = node.tagName.toLowerCase()
+      node.childNodes.forEach(c => walk(c, bold || t === 'b' || t === 'strong', underline || t === 'u'))
+    }
+  }
+  walk(el, false, false)
+  return segs
+}
+
+// Renderiza texto enriquecido en jsPDF respetando negrita y subrayado
+function renderRichText(doc, html, x, ty, maxW, align, fontSize = 6.5) {
+  const segs = parseHtmlSegments(html)
+  if (!segs.length) return
+  doc.setFontSize(fontSize)
+
+  if (align === 'right') {
+    // Medimos el ancho total para alinear a la derecha
+    const totalW = segs.reduce((acc, s) => {
+      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
+      return acc + doc.getTextWidth(s.text)
+    }, 0)
+    let cx = x - totalW
+    segs.forEach(s => {
+      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
+      doc.text(s.text, cx, ty)
+      if (s.underline) { const w = doc.getTextWidth(s.text); doc.setLineWidth(0.2); doc.line(cx, ty + 0.8, cx + w, ty + 0.8) }
+      cx += doc.getTextWidth(s.text)
+    })
+  } else if (align === 'center') {
+    const totalW = segs.reduce((acc, s) => {
+      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
+      return acc + doc.getTextWidth(s.text)
+    }, 0)
+    let cx = x - totalW / 2
+    segs.forEach(s => {
+      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
+      doc.text(s.text, cx, ty)
+      if (s.underline) { const w = doc.getTextWidth(s.text); doc.setLineWidth(0.2); doc.line(cx, ty + 0.8, cx + w, ty + 0.8) }
+      cx += doc.getTextWidth(s.text)
+    })
+  } else {
+    let cx = x
+    segs.forEach(s => {
+      doc.setFont('helvetica', s.bold ? 'bold' : 'normal')
+      doc.text(s.text, cx, ty)
+      if (s.underline) { const w = doc.getTextWidth(s.text); doc.setLineWidth(0.2); doc.line(cx, ty + 0.8, cx + w, ty + 0.8) }
+      cx += doc.getTextWidth(s.text)
+    })
+  }
+  doc.setFont('helvetica', 'normal')
+}
+
 function calcTot(row) {
   const p = parseFloat(String(row.precioUn).replace(/\./g,'').replace(',','.')) || 0
   const q = parseFloat(String(row.cajasUn).replace(',','.')) || 0
@@ -1478,21 +1538,15 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             x += w; return
           }
 
-          // Texto normal
-          const txt = stripHtml(raw)
-          if (!txt) { x += w; return }
-          const maxW = w - 3
-          const lines = doc.splitTextToSize(txt, maxW)
-          const show  = lines.slice(0, 2)
-          const lineH = 6.5 * 0.352 + 0.7
-          const blockH = show.length * lineH
-          const ty = y + (rowH - blockH) / 2 + lineH * 0.75
+          // Texto enriquecido (respeta negrita y subrayado)
+          if (!stripHtml(raw)) { x += w; return }
+          const ty = y + rowH / 2 + 2
           if (col.align === 'right') {
-            show.forEach((l, i) => doc.text(l, x + w - 1.5, ty + i * lineH, { align: 'right' }))
+            renderRichText(doc, raw, x + w - 1.5, ty, w - 3, 'right')
           } else if (col.align === 'center') {
-            show.forEach((l, i) => doc.text(l, x + w / 2, ty + i * lineH, { align: 'center' }))
+            renderRichText(doc, raw, x + w / 2, ty, w - 3, 'center')
           } else {
-            show.forEach((l, i) => doc.text(l, x + 1.5, ty + i * lineH))
+            renderRichText(doc, raw, x + 1.5, ty, w - 3, 'left')
           }
           x += w
         })
