@@ -1403,9 +1403,10 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       const scale = usableW / totalColW
 
       const colW = PDF_COLS.map(c => c.w * scale)
-      const ROW_H   = 17   // datos
-      const HDR_H   = 7    // encabezado de sección
-      const THDR_H  = 6    // header de tabla
+      const ROW_H   = 22   // datos
+      const HDR_H   = 9    // encabezado de sección
+      const THDR_H  = 8    // header de tabla
+      const FONT_SZ = 8    // tamaño de texto en celdas
       const PAGE_H  = PH - MG * 2
 
       const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' })
@@ -1430,13 +1431,13 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
         doc.rect(MG, y, usableW, THDR_H, 'F')
         doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2)
         doc.line(MG, y + THDR_H, MG + usableW, y + THDR_H)
-        doc.setFont('helvetica', 'bold'); doc.setFontSize(6); doc.setTextColor(30,30,30)
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_SZ - 1); doc.setTextColor(30,30,30)
         let x = MG
         PDF_COLS.forEach((col, ci) => {
           const w = colW[ci]
-          if (col.align === 'right') doc.text(col.label, x + w - 1.5, y + THDR_H - 1.8, { align: 'right' })
-          else if (col.align === 'center') doc.text(col.label, x + w / 2, y + THDR_H - 1.8, { align: 'center' })
-          else doc.text(col.label, x + 1.5, y + THDR_H - 1.8)
+          if (col.align === 'right') doc.text(col.label, x + w - 1.5, y + THDR_H - 2, { align: 'right' })
+          else if (col.align === 'center') doc.text(col.label, x + w / 2, y + THDR_H - 2, { align: 'center' })
+          else doc.text(col.label, x + 1.5, y + THDR_H - 2)
           x += w
         })
       }
@@ -1484,15 +1485,15 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
 
           if (isHdr) {
             if (col.key === 'item' || col.key === 'categoria') {
-              doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(255,255,255)
+              doc.setFont('helvetica', 'bold'); doc.setFontSize(FONT_SZ + 0.5); doc.setTextColor(255,255,255)
               const txt = col.key === 'item' ? String(raw) : String(raw)
-              if (col.align === 'left') doc.text(txt, x + 1.5, y + rowH / 2 + 2.2)
+              if (col.align === 'left') doc.text(txt, x + 1.5, y + rowH / 2 + 2.5)
               x += w; return
             }
             x += w; return
           }
 
-          doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(30,30,30)
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(FONT_SZ); doc.setTextColor(30,30,30)
 
           if (col.type === 'imagen') {
             const cached = imgCache[raw]
@@ -1510,20 +1511,21 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             x += w; return
           }
 
+          const midY = y + rowH / 2 + FONT_SZ * 0.18
+
           if (col.type === 'check') {
             const tick = raw ? '✓' : '—'
             doc.setTextColor(raw ? 45 : 180, raw ? 122 : 180, raw ? 79 : 180)
             doc.setFont('helvetica', raw ? 'bold' : 'normal')
-            doc.text(tick, x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+            doc.text(tick, x + w / 2, midY, { align: 'center' })
             doc.setTextColor(30,30,30)
             x += w; return
           }
 
           if (col.type === 'link') {
             if (raw) {
-              const ty = y + rowH / 2 + 2
               doc.setTextColor(37, 99, 235); doc.setFont('helvetica', 'bold')
-              doc.text('LINK', x + w / 2, ty, { align: 'center' })
+              doc.text('LINK', x + w / 2, midY, { align: 'center' })
               doc.link(x, y, w, rowH, { url: raw })
               doc.setTextColor(30,30,30)
             }
@@ -1534,7 +1536,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             const tot = calcTot(row)
             if (tot) {
               doc.setFont('helvetica', 'bold')
-              doc.text(tot, x + w - 1.5, y + rowH / 2 + 2, { align: 'right' })
+              doc.text(tot, x + w - 1.5, midY, { align: 'right' })
             }
             x += w; return
           }
@@ -1546,7 +1548,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             const isLimite = col.key === 'fechaLimite'
             doc.setFont('helvetica', isLimite ? 'bold' : 'normal')
             doc.setTextColor(raw ? 30 : 180, 30, raw ? 30 : 180)
-            doc.text(display, x + w / 2, y + rowH / 2 + 2, { align: 'center' })
+            doc.text(display, x + w / 2, midY, { align: 'center' })
             doc.setFont('helvetica', 'normal')
             doc.setTextColor(30, 30, 30)
             x += w; return
@@ -1556,7 +1558,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
             const p = parseFloat(String(raw).replace(/\./g,'').replace(',','.')) || 0
             if (p) {
               doc.setFont('helvetica', 'normal')
-              doc.text('$ ' + Math.round(p).toLocaleString('es-AR'), x + w - 1.5, y + rowH / 2 + 2, { align: 'right' })
+              doc.text('$ ' + Math.round(p).toLocaleString('es-AR'), x + w - 1.5, midY, { align: 'right' })
             }
             x += w; return
           }
@@ -1564,11 +1566,11 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
           // Texto enriquecido (respeta negrita, subrayado y word-wrap)
           if (!stripHtml(raw)) { x += w; return }
           if (col.align === 'right') {
-            renderRichText(doc, raw, x + w - 1.5, y, rowH, w - 3, 'right')
+            renderRichText(doc, raw, x + w - 1.5, y, rowH, w - 3, 'right', FONT_SZ)
           } else if (col.align === 'center') {
-            renderRichText(doc, raw, x + w / 2, y, rowH, w - 3, 'center')
+            renderRichText(doc, raw, x + w / 2, y, rowH, w - 3, 'center', FONT_SZ)
           } else {
-            renderRichText(doc, raw, x + 1.5, y, rowH, w - 3, 'left')
+            renderRichText(doc, raw, x + 1.5, y, rowH, w - 3, 'left', FONT_SZ)
           }
           x += w
         })
