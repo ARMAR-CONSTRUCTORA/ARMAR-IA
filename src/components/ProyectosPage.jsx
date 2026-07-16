@@ -1941,7 +1941,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
           <>
             <button onClick={addRow}
               style={{ padding: '6px 12px', borderRadius: 7, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              + Fila
+              + Fila al final
             </button>
             <button
               title="Negrita (seleccioná texto primero)"
