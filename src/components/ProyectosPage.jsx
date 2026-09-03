@@ -1357,6 +1357,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
   const [exportandoRellenable, setExportandoRellenable] = useState(false)
   const [exportSelector,       setExportSelector]       = useState(false)
   const [selectedPdfCols,      setSelectedPdfCols]      = useState(() => new Set(ALL_PDF_COLS.map(c => c.key)))
+  const [selectedCaps,         setSelectedCaps]         = useState(() => new Set())
   const [colWidths, setColWidths] = useState(() => Object.fromEntries(COMPRAS_COLS.map(c => [c.key, c.w])))
   const [confirmDelete, setConfirmDelete] = useState(null)
   const fileRefs = useRef({})
@@ -1371,16 +1372,21 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
     window.addEventListener('mouseup', onUp)
   }
 
-  const exportarPDF = async (colsSet) => {
+  const exportarPDF = async (colsSet, capsSet) => {
     setExportando(true)
     setExportSelector(false)
     try {
       const { jsPDF } = await import('jspdf')
       const PDF_COLS = ALL_PDF_COLS.filter(c => colsSet.has(c.key))
 
+      // Filtrar filas por categoría seleccionada (si capsSet vacío = todas)
+      const rowsFiltrados = capsSet && capsSet.size > 0
+        ? rows.filter(r => !r.categoria || capsSet.has(r.categoria))
+        : rows
+
       // Pre-fetch imágenes con dimensiones naturales
       const imgCache = {}
-      for (const row of rows) {
+      for (const row of rowsFiltrados) {
         if (row.foto && !imgCache[row.foto] && colsSet.has('foto')) {
           const b64 = await fetchImageBase64(row.foto)
           if (b64) {
@@ -1447,8 +1453,8 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       drawTableHeader(y)
       y += THDR_H
 
-      for (let ri = 0; ri < rows.length; ri++) {
-        const row = rows[ri]
+      for (let ri = 0; ri < rowsFiltrados.length; ri++) {
+        const row = rowsFiltrados[ri]
         const isHdr = isComprasHeader(row)
         const rowH  = isHdr ? HDR_H : ROW_H
 
@@ -2177,45 +2183,88 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       )}
 
       {/* Modal selector de columnas PDF */}
-      {exportSelector && (
-        <div onClick={() => setExportSelector(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600 }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: 'white', borderRadius: 14, padding: '24px 28px', maxWidth: 420, width: '92%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: dark, marginBottom: 4 }}>Elegí los campos a exportar</div>
-            <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 16 }}>El campo "Item" siempre se incluye.</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 20 }}>
-              {ALL_PDF_COLS.filter(c => !c.fixed).map(col => (
-                <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: dark }}>
-                  <input
-                    type="checkbox"
-                    checked={selectedPdfCols.has(col.key)}
-                    onChange={() => {
-                      setSelectedPdfCols(prev => {
-                        const next = new Set(prev)
-                        next.has(col.key) ? next.delete(col.key) : next.add(col.key)
-                        return next
-                      })
-                    }}
-                    style={{ accentColor: orange, width: 15, height: 15 }}
-                  />
-                  {col.label}
-                </label>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => setExportSelector(false)}
-                style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                Cancelar
-              </button>
-              <button onClick={() => exportarPDF(new Set([...selectedPdfCols, 'item']))}
-                style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: orange, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
-                ↓ Exportar PDF
-              </button>
+      {exportSelector && (() => {
+        const caps = [...new Set(rows.map(r => r.categoria).filter(Boolean))].sort()
+        const todasCaps = selectedCaps.size === 0 || selectedCaps.size === caps.length
+        return (
+          <div onClick={() => setExportSelector(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600 }}>
+            <div onClick={e => e.stopPropagation()}
+              style={{ background: 'white', borderRadius: 14, padding: '24px 28px', maxWidth: 460, width: '92%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)', maxHeight: '90vh', overflowY: 'auto' }}>
+
+              {/* Columnas */}
+              <div style={{ fontSize: 15, fontWeight: 700, color: dark, marginBottom: 4 }}>Elegí los campos a exportar</div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 12 }}>El campo "Item" siempre se incluye.</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 20 }}>
+                {ALL_PDF_COLS.filter(c => !c.fixed).map(col => (
+                  <label key={col.key} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: dark }}>
+                    <input
+                      type="checkbox"
+                      checked={selectedPdfCols.has(col.key)}
+                      onChange={() => {
+                        setSelectedPdfCols(prev => {
+                          const next = new Set(prev)
+                          next.has(col.key) ? next.delete(col.key) : next.add(col.key)
+                          return next
+                        })
+                      }}
+                      style={{ accentColor: orange, width: 15, height: 15 }}
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+
+              {/* Categorías */}
+              {caps.length > 0 && (
+                <>
+                  <div style={{ borderTop: `1px solid ${border}`, marginBottom: 14 }} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: dark }}>Filtrar por categoría</div>
+                      <div style={{ fontSize: 12, color: '#6B7280' }}>Si no elegís ninguna, se exportan todas.</div>
+                    </div>
+                    <button
+                      onClick={() => setSelectedCaps(new Set())}
+                      style={{ fontSize: 11, fontWeight: 700, color: todasCaps ? orange : mid, background: todasCaps ? orangeLight : '#F3F4F6', border: `1px solid ${todasCaps ? orange : border}`, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Todas
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+                    {caps.map(cap => {
+                      const active = selectedCaps.size === 0 ? false : selectedCaps.has(cap)
+                      return (
+                        <button
+                          key={cap}
+                          onClick={() => setSelectedCaps(prev => {
+                            const next = new Set(prev.size === 0 ? caps : prev)
+                            next.has(cap) ? next.delete(cap) : next.add(cap)
+                            if (next.size === caps.length) return new Set()
+                            return next
+                          })}
+                          style={{ fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 99, border: `1px solid ${active ? orange : border}`, background: active ? orangeLight : 'white', color: active ? orange : mid, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          {cap}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => setExportSelector(false)}
+                  style={{ padding: '8px 18px', borderRadius: 8, border: `1px solid ${border}`, background: 'white', color: mid, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancelar
+                </button>
+                <button onClick={() => exportarPDF(new Set([...selectedPdfCols, 'item']), selectedCaps)}
+                  style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: orange, color: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ↓ Exportar PDF{selectedCaps.size > 0 ? ` (${selectedCaps.size} cat.)` : ''}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* Modal confirmación eliminar fila */}
       {confirmDelete !== null && (
