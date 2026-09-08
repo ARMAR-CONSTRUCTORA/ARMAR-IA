@@ -1379,10 +1379,14 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       const { jsPDF } = await import('jspdf')
       const PDF_COLS = ALL_PDF_COLS.filter(c => colsSet.has(c.key))
 
-      // Filtrar filas por categoría seleccionada (si capsSet vacío = todas)
-      const rowsFiltrados = capsSet && capsSet.size > 0
-        ? rows.filter(r => !r.categoria || capsSet.has(r.categoria))
-        : rows
+      // Filtrar por capítulo: recorre las filas llevando el capítulo activo
+      let currentCap = null
+      const rowsFiltrados = (!capsSet || capsSet.size === 0)
+        ? rows
+        : rows.filter(r => {
+            if (isComprasHeader(r)) { currentCap = r.categoria; return capsSet.has(currentCap) }
+            return capsSet.has(currentCap)
+          })
 
       // Pre-fetch imágenes con dimensiones naturales
       const imgCache = {}
@@ -2184,7 +2188,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
 
       {/* Modal selector de columnas PDF */}
       {exportSelector && (() => {
-        const caps = [...new Set(rows.map(r => r.categoria).filter(Boolean))].sort()
+        const caps = rows.filter(r => isComprasHeader(r) && r.categoria).map(r => r.categoria)
         const todasCaps = selectedCaps.size === 0 || selectedCaps.size === caps.length
         return (
           <div onClick={() => setExportSelector(false)}
@@ -2221,8 +2225,8 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
                   <div style={{ borderTop: `1px solid ${border}`, marginBottom: 14 }} />
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                     <div>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: dark }}>Filtrar por categoría</div>
-                      <div style={{ fontSize: 12, color: '#6B7280' }}>Si no elegís ninguna, se exportan todas.</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: dark }}>Filtrar por capítulo</div>
+                      <div style={{ fontSize: 12, color: '#6B7280' }}>Si no elegís ninguno, se exportan todos.</div>
                     </div>
                     <button
                       onClick={() => setSelectedCaps(new Set())}
