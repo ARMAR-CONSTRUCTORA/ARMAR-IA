@@ -1227,6 +1227,11 @@ function parseHtmlSegments(html) {
       if (node.textContent) segs.push({ text: node.textContent, bold, underline })
     } else if (node.nodeType === 1) {
       const t = node.tagName.toLowerCase()
+      // Saltos de línea: <br> y bloques (div/p/li) generados por contentEditable
+      if (t === 'br') { segs.push({ text: '\n', bold, underline }); return }
+      if (['div', 'p', 'li'].includes(t) && segs.length && !segs[segs.length - 1].text.endsWith('\n')) {
+        segs.push({ text: '\n', bold, underline })
+      }
       const st = node.style || {}
       const fw = st.fontWeight || ''
       const td = st.textDecoration || ''
@@ -1240,23 +1245,30 @@ function parseHtmlSegments(html) {
 }
 
 // Renderiza texto enriquecido en jsPDF con word-wrap y respetando negrita/subrayado
-function renderRichText(doc, html, colX, cellY, cellH, maxW, align, fontSize = 6.5) {
+const richLineH = (fontSize) => fontSize * 0.352 + 0.7
+
+// Arma las líneas (con word-wrap y saltos de línea explícitos) de un texto enriquecido
+function layoutRichText(doc, html, maxW, fontSize = 6.5) {
   const segs = parseHtmlSegments(html)
-  if (!segs.length) return
+  if (!segs.length) return []
   doc.setFontSize(fontSize)
 
-  // Dividir segmentos en tokens (palabras + espacios), preservando formato
+  // Dividir segmentos en tokens (palabras + espacios + saltos), preservando formato
   const tokens = []
   segs.forEach(seg => {
-    seg.text.split(/(\s+)/).forEach(part => {
-      if (part) tokens.push({ text: part, bold: seg.bold, underline: seg.underline })
+    seg.text.replace(/\r/g, '').split(/(\n)/).forEach(chunk => {
+      if (chunk === '\n') { tokens.push({ nl: true }); return }
+      chunk.split(/(\s+)/).forEach(part => {
+        if (part) tokens.push({ text: part, bold: seg.bold, underline: seg.underline })
+      })
     })
   })
 
-  // Construir líneas con word-wrap
   const lines = [] // cada línea: array de tokens
   let line = [], lineW = 0
   tokens.forEach(tok => {
+    if (tok.nl) { lines.push(line); line = []; lineW = 0; return }
+    if (!line.length && !tok.text.trim()) return // sin espacios al inicio de línea
     doc.setFont('helvetica', tok.bold ? 'bold' : 'normal')
     const tw = doc.getTextWidth(tok.text)
     if (lineW + tw > maxW && line.length && tok.text.trim()) {
@@ -1266,11 +1278,20 @@ function renderRichText(doc, html, colX, cellY, cellH, maxW, align, fontSize = 6
     }
   })
   if (line.length) lines.push(line)
+  // Descartar líneas vacías al final
+  while (lines.length && !lines[lines.length - 1].length) lines.pop()
+  return lines
+}
 
-  const show  = lines.slice(0, 2) // máximo 2 líneas como antes
-  const lineH = fontSize * 0.352 + 0.7
+// Renderiza texto enriquecido en jsPDF con word-wrap y respetando negrita/subrayado
+function renderRichText(doc, html, colX, cellY, cellH, maxW, align, fontSize = 6.5) {
+  const show = layoutRichText(doc, html, maxW, fontSize) // sin límite de líneas: la fila crece
+  if (!show.length) return
+  doc.setFontSize(fontSize)
+
+  const lineH = richLineH(fontSize)
   const blockH = show.length * lineH
-  const startY = cellY + (cellH - blockH) / 2 + lineH * 0.75
+  const startY = cellY + Math.max(0, (cellH - blockH) / 2) + lineH * 0.75
 
   // Función para medir el ancho total de una línea
   const lineWidth = (ln) => ln.reduce((acc, tok) => {
@@ -1325,7 +1346,7 @@ const ALL_PDF_COLS = [
   { key: 'link',            label: 'Link',             w: 12, align: 'center', type: 'link' },
   { key: 'precioUn',        label: '$un.',             w: 22, align: 'right' },
   { key: 'precioTot',       label: '$tot',             w: 22, align: 'right',  type: 'calc' },
-  { key: 'observaciones',   label: 'Obs.',             w: 29, align: 'left' },
+  { key: 'observaciones',   label: 'Obs.',             w: 50, align: 'left' },
 ]
 
 async function fetchImageBase64(url) {
@@ -1419,6 +1440,20 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       const FONT_SZ = 8    // tamaño de texto en celdas
       const PAGE_H  = PH - MG * 2
 
+      // Alto de fila dinámico: crece según la columna de texto con más líneas (ej. Observaciones)
+      const calcRowH = (row) => {
+        if (isComprasHeader(row)) return HDR_H
+        let maxLines = 0
+        PDF_COLS.forEach((col, ci) => {
+          if (col.type || col.key === 'precioUn') return // solo columnas de texto
+          const raw = row[col.key]
+          if (!stripHtml(raw).trim()) return
+          maxLines = Math.max(maxLines, layoutRichText(doc, raw, colW[ci] - 3, FONT_SZ).length)
+        })
+        const needed = maxLines * richLineH(FONT_SZ) + 4
+        return Math.min(Math.max(ROW_H, needed), PAGE_H - THDR_H - 13) // nunca más que una página
+      }
+
       const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'numeric' })
 
       let pageNum = 1
@@ -1460,7 +1495,7 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       for (let ri = 0; ri < rowsFiltrados.length; ri++) {
         const row = rowsFiltrados[ri]
         const isHdr = isComprasHeader(row)
-        const rowH  = isHdr ? HDR_H : ROW_H
+        const rowH  = calcRowH(row)
 
         // Nueva página si no cabe
         if (y + rowH > MG + PAGE_H) {
