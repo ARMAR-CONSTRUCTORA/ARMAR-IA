@@ -1446,9 +1446,11 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
         let maxLines = 0
         PDF_COLS.forEach((col, ci) => {
           if (col.type || col.key === 'precioUn') return // solo columnas de texto
-          const raw = row[col.key]
-          if (!stripHtml(raw).trim()) return
-          maxLines = Math.max(maxLines, layoutRichText(doc, raw, colW[ci] - 3, FONT_SZ).length)
+          try {
+            const raw = row[col.key]
+            if (!stripHtml(raw).trim()) return
+            maxLines = Math.max(maxLines, layoutRichText(doc, raw, colW[ci] - 3, FONT_SZ).length)
+          } catch (err) { console.warn('calcRowH', col.key, err) }
         })
         const needed = maxLines * richLineH(FONT_SZ) + 4
         return Math.min(Math.max(ROW_H, needed), PAGE_H - THDR_H - 13) // nunca más que una página
@@ -1624,7 +1626,10 @@ function TablaCompras({ comprasData, isEditor, proyId, proyNombre, onSave }) {
       }
 
       doc.save(`Compras_${(proyNombre || 'proyecto').replace(/[^\w\s]/g,'').trim()}.pdf`)
-    } catch(e) { console.error(e) }
+    } catch(e) {
+      console.error(e)
+      alert('No se pudo exportar el PDF: ' + (e?.message || e))
+    }
     finally { setExportando(false) }
   }
 
